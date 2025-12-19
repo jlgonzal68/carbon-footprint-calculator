@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { ConfirmModal } from '@/components/confirm-modal';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -31,6 +32,9 @@ export default function ResiduosScreen() {
   const [selectedTipo, setSelectedTipo] = useState<string>('');
   const [cantidadKg, setCantidadKg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<number | null>(null);
 
   const { data: organizaciones } = trpc.carbon.getOrganizaciones.useQuery(undefined, { enabled: !!user });
   const organizacion = organizaciones && Array.isArray(organizaciones) && organizaciones.length > 0 ? organizaciones[0] : null;
@@ -48,9 +52,7 @@ export default function ResiduosScreen() {
   const createResiduoMutation = trpc.carbon.createResiduoSolido.useMutation({
     onSuccess: () => {
       Alert.alert('Éxito', 'Residuo registrado correctamente');
-      setCantidadKg('');
-      setSelectedCampus(null);
-      setSelectedTipo('');
+      resetForm();
       refetch();
       setLoading(false);
     },
@@ -59,6 +61,58 @@ export default function ResiduosScreen() {
       setLoading(false);
     },
   });
+
+  const updateResiduoMutation = trpc.carbon.updateResiduo.useMutation({
+    onSuccess: () => {
+      Alert.alert('Éxito', 'Residuo actualizado correctamente');
+      resetForm();
+      refetch();
+      setLoading(false);
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.message);
+      setLoading(false);
+    },
+  });
+
+  const deleteResiduoMutation = trpc.carbon.deleteResiduo.useMutation({
+    onSuccess: () => {
+      Alert.alert('Éxito', 'Residuo eliminado correctamente');
+      refetch();
+      setDeleteModalVisible(false);
+      setItemToDelete(null);
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.message);
+      setDeleteModalVisible(false);
+      setItemToDelete(null);
+    },
+  });
+
+  const resetForm = () => {
+    setSelectedTipo('');
+    setCantidadKg('');
+    setSelectedCampus(null);
+    setEditingId(null);
+  };
+
+  const handleEdit = (item: any) => {
+    setEditingId(item.id);
+    setSelectedCampus(item.campus_id);
+    setSelectedTipo(item.tipo);
+    setCantidadKg(item.cantidad_kg.toString());
+  };
+
+  const handleDelete = (id: number) => {
+    setItemToDelete(id);
+    setDeleteModalVisible(true);
+  };
+
+  const confirmDelete = () => {
+    if (itemToDelete) {
+      deleteResiduoMutation.mutate({ id: itemToDelete });
+    }
+  };
 
   const handleSubmit = () => {
     if (!selectedAno) {
@@ -72,30 +126,36 @@ export default function ResiduosScreen() {
     }
 
     if (!selectedTipo) {
-      Alert.alert('Error', 'Selecciona el tipo de residuo');
+      Alert.alert('Error', 'Selecciona un tipo de residuo');
       return;
     }
 
     const cantidad = parseFloat(cantidadKg);
-    if (!cantidadKg || isNaN(cantidad) || cantidad < 0) {
+    if (!cantidadKg || isNaN(cantidad) || cantidad <= 0) {
       Alert.alert('Error', 'Ingresa una cantidad válida en kg');
       return;
     }
 
     setLoading(true);
-    createResiduoMutation.mutate({
-      ano_inventario_id: selectedAno,
-      campus_id: selectedCampus,
-      tipo: selectedTipo as any,
-      cantidad_kg: cantidad,
-    });
+    if (editingId) {
+      updateResiduoMutation.mutate({
+        id: editingId,
+        cantidad_kg: cantidad,
+      });
+    } else {
+      createResiduoMutation.mutate({
+        ano_inventario_id: selectedAno,
+        campus_id: selectedCampus,
+        tipo: selectedTipo as 'relleno' | 'compostado' | 'peligroso' | 'reciclado',
+        cantidad_kg: cantidad,
+      });
+    }
   };
 
-  const calcularEmisionEstimada = (kg: string, tipo: string) => {
-    const cantidad = parseFloat(kg);
-    if (isNaN(cantidad) || cantidad <= 0) return 0;
+  const calcularEmisionEstimada = () => {
+    const cantidad = parseFloat(cantidadKg);
+    if (isNaN(cantidad) || cantidad <= 0 || !selectedTipo) return 0;
     
-    // Factores de emisión aproximados (kg CO2e por kg de residuo)
     const factores: Record<string, number> = {
       relleno: 0.5,
       compostado: 0.1,
@@ -103,17 +163,11 @@ export default function ResiduosScreen() {
       reciclado: 0.05,
     };
     
-    const factor = factores[tipo] || 0;
-    return (cantidad * factor).toFixed(2);
+    return (cantidad * (factores[selectedTipo] || 0)).toFixed(2);
   };
 
-  const getCampusNombre = (campusId: number) => {
-    const campus = CAMPUS.find(c => c.id === campusId);
-    return campus ? campus.nombre : 'Desconocido';
-  };
-
-  const getTipoInfo = (tipo: string) => {
-    return TIPOS_RESIDUO.find(t => t.id === tipo);
+  const getTipoInfo = (tipoId: string) => {
+    return TIPOS_RESIDUO.find(t => t.id === tipoId);
   };
 
   if (!organizacion) {
@@ -126,11 +180,11 @@ export default function ResiduosScreen() {
           <ThemedText type="title" style={styles.title}>
             Residuos Sólidos
           </ThemedText>
-          <ThemedText style={styles.description}>
-            Primero debes crear una organización.
+          <ThemedText style={styles.noOrg}>
+            No tienes una organización creada. Ve a Configuración para crear una.
           </ThemedText>
-          <Pressable style={styles.primaryButton} onPress={() => router.push('/organizacion')}>
-            <Text style={styles.primaryButtonText}>Crear Organización</Text>
+          <Pressable style={styles.backButton} onPress={() => router.back()}>
+            <ThemedText style={styles.backText}>← Volver</ThemedText>
           </Pressable>
         </ThemedView>
       </ScrollView>
@@ -138,182 +192,202 @@ export default function ResiduosScreen() {
   }
 
   return (
-    <ScrollView
-      style={[styles.container, { paddingTop: insets.top }]}
-      contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
-    >
-      <ThemedView style={styles.content}>
-        <ThemedText type="title" style={styles.title}>
-          ♻️ Residuos Sólidos
-        </ThemedText>
+    <>
+      <ScrollView
+        style={[styles.container, { paddingTop: insets.top }]}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+      >
+        <ThemedView style={styles.content}>
+          <Pressable style={styles.backButton} onPress={() => router.back()}>
+            <ThemedText style={styles.backText}>← Volver</ThemedText>
+          </Pressable>
 
-        <ThemedText style={styles.description}>
-          Registra la cantidad de residuos generados por campus, clasificados por tipo de disposición
-        </ThemedText>
-
-        {/* Selector de Año */}
-        <ThemedView style={styles.section}>
-          <ThemedText type="subtitle" style={styles.label}>
-            Año de Inventario *
+          <ThemedText type="title" style={styles.title}>
+            ♻️ Residuos Sólidos
           </ThemedText>
-          <View style={styles.yearSelector}>
-            {anosInventario && Array.isArray(anosInventario) && anosInventario.map((ano: any) => (
-              <Pressable
-                key={ano.id}
-                style={[
-                  styles.yearButton,
-                  selectedAno === ano.id && styles.yearButtonSelected,
-                ]}
-                onPress={() => setSelectedAno(ano.id)}
-              >
-                <Text
+
+          <ThemedView style={styles.card}>
+            <ThemedText type="subtitle" style={styles.cardTitle}>
+              Año de Inventario
+            </ThemedText>
+            <View style={styles.anoSelector}>
+              {(anosInventario as any[])?.map((ano: any) => (
+                <Pressable
+                  key={ano.id}
                   style={[
-                    styles.yearButtonText,
-                    selectedAno === ano.id && styles.yearButtonTextSelected,
+                    styles.anoButton,
+                    selectedAno === ano.id && styles.anoButtonSelected,
                   ]}
+                  onPress={() => setSelectedAno(ano.id)}
                 >
-                  {ano.ano}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </ThemedView>
-
-        {selectedAno && (
-          <>
-            {/* Formulario */}
-            <ThemedView style={styles.form}>
-              <ThemedText type="subtitle" style={styles.formTitle}>
-                Nuevo Registro
-              </ThemedText>
-
-              <ThemedText style={styles.label}>
-                Campus *
-              </ThemedText>
-              <View style={styles.campusGrid}>
-                {CAMPUS.map((campus) => (
-                  <Pressable
-                    key={campus.id}
+                  <Text
                     style={[
-                      styles.campusButton,
-                      selectedCampus === campus.id && styles.campusButtonSelected,
+                      styles.anoText,
+                      selectedAno === ano.id && styles.anoTextSelected,
                     ]}
-                    onPress={() => setSelectedCampus(campus.id)}
                   >
-                    <Text
-                      style={[
-                        styles.campusButtonText,
-                        selectedCampus === campus.id && styles.campusButtonTextSelected,
-                      ]}
-                    >
-                      {campus.nombre}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+                    {ano.ano}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </ThemedView>
 
-              <ThemedText style={[styles.label, { marginTop: 16 }]}>
-                Tipo de Disposición *
-              </ThemedText>
-              <View style={styles.tipoGrid}>
-                {TIPOS_RESIDUO.map((tipo) => (
-                  <Pressable
-                    key={tipo.id}
-                    style={[
-                      styles.tipoButton,
-                      selectedTipo === tipo.id && styles.tipoButtonSelected,
-                      { borderColor: selectedTipo === tipo.id ? tipo.color : '#ddd' },
-                    ]}
-                    onPress={() => setSelectedTipo(tipo.id)}
-                  >
-                    <Text style={styles.tipoIcon}>{tipo.icon}</Text>
-                    <Text
-                      style={[
-                        styles.tipoButtonText,
-                        selectedTipo === tipo.id && { color: tipo.color },
-                      ]}
-                    >
-                      {tipo.nombre}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <ThemedText style={[styles.label, { marginTop: 16 }]}>
-                Cantidad (kg) *
-              </ThemedText>
-              <TextInput
-                style={styles.input}
-                value={cantidadKg}
-                onChangeText={setCantidadKg}
-                placeholder="Ej: 1500"
-                keyboardType="numeric"
-                placeholderTextColor="#999"
-              />
-
-              {cantidadKg && parseFloat(cantidadKg) > 0 && selectedTipo && (
-                <ThemedView style={styles.emissionPreview}>
-                  <ThemedText style={styles.emissionLabel}>
-                    Emisión estimada:
-                  </ThemedText>
-                  <ThemedText style={styles.emissionValue}>
-                    {calcularEmisionEstimada(cantidadKg, selectedTipo)} kg CO₂e
-                  </ThemedText>
-                </ThemedView>
-              )}
-
-              <Pressable
-                style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-                onPress={handleSubmit}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={styles.submitButtonText}>Guardar Registro</Text>
-                )}
-              </Pressable>
-            </ThemedView>
-
-            {/* Lista de Registros */}
-            {residuos && Array.isArray(residuos) && residuos.length > 0 && (
-              <ThemedView style={styles.listSection}>
-                <ThemedText type="subtitle" style={styles.listTitle}>
-                  Registros Guardados ({residuos.length} registros)
+          {selectedAno && (
+            <>
+              <ThemedView style={styles.card}>
+                <ThemedText type="subtitle" style={styles.cardTitle}>
+                  {editingId ? 'Editar Registro' : 'Nuevo Registro'}
                 </ThemedText>
-                {residuos.map((item: any) => {
-                  const tipoInfo = getTipoInfo(item.tipo_residuo);
-                  return (
-                    <ThemedView key={item.id} style={styles.listItem}>
-                      <View style={styles.listItemHeader}>
-                        <ThemedText style={styles.listItemTitle}>
-                          {tipoInfo?.icon} {tipoInfo?.nombre || item.tipo_residuo}
-                        </ThemedText>
-                        <View style={[styles.badge, { backgroundColor: tipoInfo?.color || '#999' }]}>
-                          <Text style={styles.badgeText}>{item.cantidad_kg.toLocaleString()} kg</Text>
-                        </View>
-                      </View>
-                      <ThemedText style={styles.listItemDetail}>
-                        📍 Campus: {item.campus_nombre || getCampusNombre(item.campus_id)}
-                      </ThemedText>
-                      {item.emision_co2e && (
-                        <ThemedText style={styles.listItemEmission}>
-                          💨 Emisión: {item.emision_co2e.toFixed(2)} kg CO₂e
-                        </ThemedText>
-                      )}
-                    </ThemedView>
-                  );
-                })}
-              </ThemedView>
-            )}
-          </>
-        )}
 
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>Volver</Text>
-        </Pressable>
-      </ThemedView>
-    </ScrollView>
+                <ThemedText style={styles.label}>Campus *</ThemedText>
+                <View style={styles.campusGrid}>
+                  {CAMPUS.map((campus) => (
+                    <Pressable
+                      key={campus.id}
+                      style={[
+                        styles.campusButton,
+                        selectedCampus === campus.id && styles.campusButtonSelected,
+                      ]}
+                      onPress={() => setSelectedCampus(campus.id)}
+                      disabled={!!editingId}
+                    >
+                      <Text
+                        style={[
+                          styles.campusButtonText,
+                          selectedCampus === campus.id && styles.campusButtonTextSelected,
+                        ]}
+                      >
+                        {campus.nombre}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <ThemedText style={styles.label}>Tipo de Residuo *</ThemedText>
+                <View style={styles.tipoGrid}>
+                  {TIPOS_RESIDUO.map((tipo) => (
+                    <Pressable
+                      key={tipo.id}
+                      style={[
+                        styles.tipoButton,
+                        selectedTipo === tipo.id && { backgroundColor: tipo.color },
+                      ]}
+                      onPress={() => setSelectedTipo(tipo.id)}
+                      disabled={!!editingId}
+                    >
+                      <Text style={styles.tipoIcon}>{tipo.icon}</Text>
+                      <Text
+                        style={[
+                          styles.tipoButtonText,
+                          selectedTipo === tipo.id && styles.tipoButtonTextSelected,
+                        ]}
+                      >
+                        {tipo.nombre}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <ThemedText style={styles.label}>Cantidad (kg) *</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  value={cantidadKg}
+                  onChangeText={setCantidadKg}
+                  keyboardType="numeric"
+                  placeholder="Ej: 1000"
+                  placeholderTextColor="#999"
+                />
+
+                {cantidadKg && selectedTipo && (
+                  <ThemedText style={styles.emisionPreview}>
+                    Emisión estimada: {calcularEmisionEstimada()} kg CO₂e
+                  </ThemedText>
+                )}
+
+                <Pressable
+                  style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+                  onPress={handleSubmit}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <ThemedText style={styles.submitText}>
+                      {editingId ? 'Actualizar' : 'Guardar Registro'}
+                    </ThemedText>
+                  )}
+                </Pressable>
+
+                {editingId && (
+                  <Pressable style={styles.cancelButton} onPress={resetForm}>
+                    <ThemedText style={styles.cancelText}>Cancelar Edición</ThemedText>
+                  </Pressable>
+                )}
+              </ThemedView>
+
+              <ThemedView style={styles.card}>
+                <ThemedText type="subtitle" style={styles.cardTitle}>
+                  Registros Guardados
+                </ThemedText>
+                {(residuos as any[])?.length === 0 ? (
+                  <ThemedText style={styles.noData}>
+                    No hay registros de residuos para este año
+                  </ThemedText>
+                ) : (
+                  (residuos as any[])?.map((item: any) => {
+                    const tipoInfo = getTipoInfo(item.tipo);
+                    return (
+                      <ThemedView key={item.id} style={styles.listItem}>
+                        <View style={styles.listItemContent}>
+                          <ThemedText type="defaultSemiBold">
+                            {tipoInfo?.icon} {tipoInfo?.nombre} - {item.campus_nombre}
+                          </ThemedText>
+                          <ThemedText style={styles.listItemDetail}>
+                            Cantidad: {item.cantidad_kg.toLocaleString()} kg
+                          </ThemedText>
+                          <ThemedText style={styles.listItemDetail}>
+                            Emisión: {item.emision_co2e.toFixed(2)} kg CO₂e
+                          </ThemedText>
+                        </View>
+                        <View style={styles.listItemActions}>
+                          <Pressable
+                            style={styles.editButton}
+                            onPress={() => handleEdit(item)}
+                          >
+                            <ThemedText style={styles.editButtonText}>✏️</ThemedText>
+                          </Pressable>
+                          <Pressable
+                            style={styles.deleteButton}
+                            onPress={() => handleDelete(item.id)}
+                          >
+                            <ThemedText style={styles.deleteButtonText}>🗑️</ThemedText>
+                          </Pressable>
+                        </View>
+                      </ThemedView>
+                    );
+                  })
+                )}
+              </ThemedView>
+            </>
+          )}
+        </ThemedView>
+      </ScrollView>
+
+      <ConfirmModal
+        visible={deleteModalVisible}
+        title="Confirmar Eliminación"
+        message="¿Estás seguro de que deseas eliminar este registro? Esta acción no se puede deshacer."
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        danger
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setDeleteModalVisible(false);
+          setItemToDelete(null);
+        }}
+      />
+    </>
   );
 }
 
@@ -322,62 +396,58 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 20,
+    padding: 16,
+    gap: 16,
   },
-  title: {
-    marginBottom: 16,
+  backButton: {
+    paddingVertical: 8,
+  },
+  backText: {
+    fontSize: 16,
     color: '#2E7D32',
   },
-  description: {
-    fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 24,
-    color: '#666',
+  title: {
+    marginBottom: 8,
   },
-  section: {
-    marginBottom: 24,
+  noOrg: {
+    textAlign: 'center',
+    marginVertical: 20,
+  },
+  card: {
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
+    gap: 12,
+  },
+  cardTitle: {
+    marginBottom: 8,
+  },
+  anoSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  anoButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#E0E0E0',
+  },
+  anoButtonSelected: {
+    backgroundColor: '#2E7D32',
+  },
+  anoText: {
+    fontSize: 16,
+    color: '#424242',
+  },
+  anoTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   label: {
     fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 8,
     fontWeight: '600',
-    color: '#333',
-  },
-  yearSelector: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  yearButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
-  },
-  yearButtonSelected: {
-    borderColor: '#2E7D32',
-    backgroundColor: '#E8F5E9',
-  },
-  yearButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#666',
-  },
-  yearButtonTextSelected: {
-    color: '#2E7D32',
-  },
-  form: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
-  },
-  formTitle: {
-    marginBottom: 16,
-    color: '#2E7D32',
+    marginTop: 8,
   },
   campusGrid: {
     flexDirection: 'row',
@@ -388,157 +458,120 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
+    backgroundColor: '#E0E0E0',
   },
   campusButtonSelected: {
-    borderColor: '#7B1FA2',
-    backgroundColor: '#F3E5F5',
+    backgroundColor: '#7B1FA2',
   },
   campusButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#666',
+    color: '#424242',
   },
   campusButtonTextSelected: {
-    color: '#4A148C',
+    color: '#FFFFFF',
   },
   tipoGrid: {
-    gap: 12,
+    gap: 8,
   },
   tipoButton: {
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-  },
-  tipoButtonSelected: {
-    backgroundColor: '#f5f5f5',
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#E0E0E0',
+    gap: 8,
   },
   tipoIcon: {
-    fontSize: 24,
+    fontSize: 20,
   },
   tipoButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#666',
+    color: '#424242',
+  },
+  tipoButtonTextSelected: {
+    color: '#FFFFFF',
   },
   input: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
+    borderColor: '#CCCCCC',
   },
-  emissionPreview: {
-    marginTop: 12,
-    padding: 12,
-    backgroundColor: '#E8F5E9',
-    borderRadius: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  emissionLabel: {
+  emisionPreview: {
     fontSize: 14,
-    color: '#1B5E20',
-  },
-  emissionValue: {
-    fontSize: 16,
-    fontWeight: '600',
     color: '#2E7D32',
+    fontStyle: 'italic',
   },
   submitButton: {
     backgroundColor: '#2E7D32',
-    padding: 14,
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 8,
   },
   submitButtonDisabled: {
     opacity: 0.6,
   },
-  submitButtonText: {
-    color: '#fff',
+  submitText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  listSection: {
-    marginBottom: 24,
+  cancelButton: {
+    backgroundColor: '#E0E0E0',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
   },
-  listTitle: {
-    marginBottom: 16,
-    color: '#2E7D32',
+  cancelText: {
+    color: '#424242',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  noData: {
+    textAlign: 'center',
+    fontStyle: 'italic',
+    color: '#757575',
   },
   listItem: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  listItemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
     marginBottom: 8,
   },
-  listItemTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+  listItemContent: {
     flex: 1,
-  },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
+    gap: 4,
   },
   listItemDetail: {
     fontSize: 14,
-    lineHeight: 22,
-    color: '#666',
-    marginTop: 4,
+    color: '#757575',
   },
-  listItemEmission: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: '#2E7D32',
-    fontWeight: '600',
-    marginTop: 8,
+  listItemActions: {
+    flexDirection: 'row',
+    gap: 8,
   },
-  primaryButton: {
-    backgroundColor: '#2E7D32',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
+  editButton: {
+    padding: 8,
+    backgroundColor: '#FFF3E0',
+    borderRadius: 6,
   },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  editButtonText: {
+    fontSize: 18,
   },
-  backButton: {
-    backgroundColor: '#666',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
+  deleteButton: {
+    padding: 8,
+    backgroundColor: '#FFEBEE',
+    borderRadius: 6,
   },
-  backButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  deleteButtonText: {
+    fontSize: 18,
   },
 });

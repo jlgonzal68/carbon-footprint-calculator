@@ -252,3 +252,8 @@
 - [x] Actualizar formulario de energía con edición y eliminación
 - [x] Actualizar formulario de aires acondicionados con edición y eliminación
 - [x] Actualizar formulario de extintores con edición y eliminación
+
+
+## Completar CRUD en Formularios Restantes (Nueva solicitud)
+- [x] Aplicar edición y eliminación al formulario de residuos sólidos
+- [x] Aplicar edición y eliminación al formulario de agua

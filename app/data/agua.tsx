@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { ConfirmModal } from '@/components/confirm-modal';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -23,6 +24,9 @@ export default function AguaScreen() {
   const [selectedCampus, setSelectedCampus] = useState<number | null>(null);
   const [consumoM3, setConsumoM3] = useState('');
   const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<number | null>(null);
 
   const { data: organizaciones } = trpc.carbon.getOrganizaciones.useQuery(undefined, { enabled: !!user });
   const organizacion = organizaciones && Array.isArray(organizaciones) && organizaciones.length > 0 ? organizaciones[0] : null;
@@ -40,8 +44,7 @@ export default function AguaScreen() {
   const createAguaMutation = trpc.carbon.createConsumoAgua.useMutation({
     onSuccess: () => {
       Alert.alert('Éxito', 'Consumo de agua registrado correctamente');
-      setConsumoM3('');
-      setSelectedCampus(null);
+      resetForm();
       refetch();
       setLoading(false);
     },
@@ -50,6 +53,56 @@ export default function AguaScreen() {
       setLoading(false);
     },
   });
+
+  const updateAguaMutation = trpc.carbon.updateAgua.useMutation({
+    onSuccess: () => {
+      Alert.alert('Éxito', 'Consumo de agua actualizado correctamente');
+      resetForm();
+      refetch();
+      setLoading(false);
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.message);
+      setLoading(false);
+    },
+  });
+
+  const deleteAguaMutation = trpc.carbon.deleteAgua.useMutation({
+    onSuccess: () => {
+      Alert.alert('Éxito', 'Consumo de agua eliminado correctamente');
+      refetch();
+      setDeleteModalVisible(false);
+      setItemToDelete(null);
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.message);
+      setDeleteModalVisible(false);
+      setItemToDelete(null);
+    },
+  });
+
+  const resetForm = () => {
+    setConsumoM3('');
+    setSelectedCampus(null);
+    setEditingId(null);
+  };
+
+  const handleEdit = (item: any) => {
+    setEditingId(item.id);
+    setSelectedCampus(item.campus_id);
+    setConsumoM3(item.consumo_m3.toString());
+  };
+
+  const handleDelete = (id: number) => {
+    setItemToDelete(id);
+    setDeleteModalVisible(true);
+  };
+
+  const confirmDelete = () => {
+    if (itemToDelete) {
+      deleteAguaMutation.mutate({ id: itemToDelete });
+    }
+  };
 
   const handleSubmit = () => {
     if (!selectedAno) {
@@ -63,41 +116,40 @@ export default function AguaScreen() {
     }
 
     const consumo = parseFloat(consumoM3);
-    if (!consumoM3 || isNaN(consumo) || consumo < 0) {
+    if (!consumoM3 || isNaN(consumo) || consumo <= 0) {
       Alert.alert('Error', 'Ingresa un consumo válido en m³');
       return;
     }
 
     setLoading(true);
-    createAguaMutation.mutate({
-      ano_inventario_id: selectedAno,
-      campus_id: selectedCampus,
-      agua_potable_m3: consumo,
-      agua_residual_m3: consumo, // Equivalente al consumo
-    });
+    if (editingId) {
+      updateAguaMutation.mutate({
+        id: editingId,
+        agua_potable_m3: consumo,
+        agua_residual_m3: consumo,
+      });
+    } else {
+      createAguaMutation.mutate({
+        ano_inventario_id: selectedAno,
+        campus_id: selectedCampus,
+        agua_potable_m3: consumo,
+        agua_residual_m3: consumo,
+      });
+    }
   };
 
-  const calcularEmisionEstimada = (m3: string) => {
-    const consumo = parseFloat(m3);
+  const calcularEmisionEstimada = () => {
+    const consumo = parseFloat(consumoM3);
     if (isNaN(consumo) || consumo <= 0) return { potable: 0, residual: 0, total: 0 };
     
-    // Factores de emisión aproximados (kg CO2e por m³)
-    const factorPotable = 0.344; // Tratamiento y distribución
-    const factorResidual = 0.272; // Tratamiento de aguas residuales
-    
-    const emisionPotable = consumo * factorPotable;
-    const emisionResidual = consumo * factorResidual;
+    const factorPotable = 0.344;
+    const factorResidual = 0.272;
     
     return {
-      potable: emisionPotable.toFixed(2),
-      residual: emisionResidual.toFixed(2),
-      total: (emisionPotable + emisionResidual).toFixed(2),
+      potable: (consumo * factorPotable).toFixed(2),
+      residual: (consumo * factorResidual).toFixed(2),
+      total: (consumo * (factorPotable + factorResidual)).toFixed(2),
     };
-  };
-
-  const getCampusNombre = (campusId: number) => {
-    const campus = CAMPUS.find(c => c.id === campusId);
-    return campus ? campus.nombre : 'Desconocido';
   };
 
   if (!organizacion) {
@@ -110,188 +162,206 @@ export default function AguaScreen() {
           <ThemedText type="title" style={styles.title}>
             Agua Potable y Residual
           </ThemedText>
-          <ThemedText style={styles.description}>
-            Primero debes crear una organización.
+          <ThemedText style={styles.noOrg}>
+            No tienes una organización creada. Ve a Configuración para crear una.
           </ThemedText>
-          <Pressable style={styles.primaryButton} onPress={() => router.push('/organizacion')}>
-            <Text style={styles.primaryButtonText}>Crear Organización</Text>
+          <Pressable style={styles.backButton} onPress={() => router.back()}>
+            <ThemedText style={styles.backText}>← Volver</ThemedText>
           </Pressable>
         </ThemedView>
       </ScrollView>
     );
   }
 
+  const emisiones = calcularEmisionEstimada();
+
   return (
-    <ScrollView
-      style={[styles.container, { paddingTop: insets.top }]}
-      contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
-    >
-      <ThemedView style={styles.content}>
-        <ThemedText type="title" style={styles.title}>
-          💧 Agua Potable y Residual
-        </ThemedText>
+    <>
+      <ScrollView
+        style={[styles.container, { paddingTop: insets.top }]}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+      >
+        <ThemedView style={styles.content}>
+          <Pressable style={styles.backButton} onPress={() => router.back()}>
+            <ThemedText style={styles.backText}>← Volver</ThemedText>
+          </Pressable>
 
-        <ThemedText style={styles.description}>
-          Registra el consumo de agua potable por campus. El volumen de agua residual se calcula automáticamente como equivalente al consumo.
-        </ThemedText>
-
-        {/* Selector de Año */}
-        <ThemedView style={styles.section}>
-          <ThemedText type="subtitle" style={styles.label}>
-            Año de Inventario *
+          <ThemedText type="title" style={styles.title}>
+            💧 Agua Potable y Residual
           </ThemedText>
-          <View style={styles.yearSelector}>
-            {anosInventario && Array.isArray(anosInventario) && anosInventario.map((ano: any) => (
-              <Pressable
-                key={ano.id}
-                style={[
-                  styles.yearButton,
-                  selectedAno === ano.id && styles.yearButtonSelected,
-                ]}
-                onPress={() => setSelectedAno(ano.id)}
-              >
-                <Text
+
+          <ThemedView style={styles.card}>
+            <ThemedText type="subtitle" style={styles.cardTitle}>
+              Año de Inventario
+            </ThemedText>
+            <View style={styles.anoSelector}>
+              {(anosInventario as any[])?.map((ano: any) => (
+                <Pressable
+                  key={ano.id}
                   style={[
-                    styles.yearButtonText,
-                    selectedAno === ano.id && styles.yearButtonTextSelected,
+                    styles.anoButton,
+                    selectedAno === ano.id && styles.anoButtonSelected,
                   ]}
+                  onPress={() => setSelectedAno(ano.id)}
                 >
-                  {ano.ano}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </ThemedView>
-
-        {selectedAno && (
-          <>
-            {/* Formulario */}
-            <ThemedView style={styles.form}>
-              <ThemedText type="subtitle" style={styles.formTitle}>
-                Nuevo Registro
-              </ThemedText>
-
-              <ThemedText style={styles.label}>
-                Campus *
-              </ThemedText>
-              <View style={styles.campusGrid}>
-                {CAMPUS.map((campus) => (
-                  <Pressable
-                    key={campus.id}
+                  <Text
                     style={[
-                      styles.campusButton,
-                      selectedCampus === campus.id && styles.campusButtonSelected,
+                      styles.anoText,
+                      selectedAno === ano.id && styles.anoTextSelected,
                     ]}
-                    onPress={() => setSelectedCampus(campus.id)}
                   >
-                    <Text
-                      style={[
-                        styles.campusButtonText,
-                        selectedCampus === campus.id && styles.campusButtonTextSelected,
-                      ]}
-                    >
-                      {campus.nombre}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+                    {ano.ano}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </ThemedView>
 
-              <ThemedText style={[styles.label, { marginTop: 16 }]}>
-                Consumo de Agua Potable (m³) *
-              </ThemedText>
-              <TextInput
-                style={styles.input}
-                value={consumoM3}
-                onChangeText={setConsumoM3}
-                placeholder="Ej: 5000"
-                keyboardType="numeric"
-                placeholderTextColor="#999"
-              />
-
-              {consumoM3 && parseFloat(consumoM3) > 0 && (
-                <ThemedView style={styles.emissionPreview}>
-                  <ThemedText style={styles.emissionTitle}>
-                    Emisiones estimadas:
-                  </ThemedText>
-                  <View style={styles.emissionRow}>
-                    <ThemedText style={styles.emissionLabel}>
-                      💧 Agua potable:
-                    </ThemedText>
-                    <ThemedText style={styles.emissionValue}>
-                      {calcularEmisionEstimada(consumoM3).potable} kg CO₂e
-                    </ThemedText>
-                  </View>
-                  <View style={styles.emissionRow}>
-                    <ThemedText style={styles.emissionLabel}>
-                      🚰 Agua residual:
-                    </ThemedText>
-                    <ThemedText style={styles.emissionValue}>
-                      {calcularEmisionEstimada(consumoM3).residual} kg CO₂e
-                    </ThemedText>
-                  </View>
-                  <View style={[styles.emissionRow, styles.emissionTotal]}>
-                    <ThemedText style={styles.emissionLabelBold}>
-                      Total:
-                    </ThemedText>
-                    <ThemedText style={styles.emissionValueBold}>
-                      {calcularEmisionEstimada(consumoM3).total} kg CO₂e
-                    </ThemedText>
-                  </View>
-                </ThemedView>
-              )}
-
-              <Pressable
-                style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-                onPress={handleSubmit}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={styles.submitButtonText}>Guardar Registro</Text>
-                )}
-              </Pressable>
-            </ThemedView>
-
-            {/* Lista de Registros */}
-            {consumosAgua && Array.isArray(consumosAgua) && consumosAgua.length > 0 && (
-              <ThemedView style={styles.listSection}>
-                <ThemedText type="subtitle" style={styles.listTitle}>
-                  Registros Guardados ({consumosAgua.length} campus)
+          {selectedAno && (
+            <>
+              <ThemedView style={styles.card}>
+                <ThemedText type="subtitle" style={styles.cardTitle}>
+                  {editingId ? 'Editar Registro' : 'Nuevo Registro'}
                 </ThemedText>
-                {consumosAgua.map((item: any) => (
-                  <ThemedView key={item.id} style={styles.listItem}>
-                    <View style={styles.listItemHeader}>
-                      <ThemedText style={styles.listItemTitle}>
-                        📍 {item.campus_nombre || getCampusNombre(item.campus_id)}
-                      </ThemedText>
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{item.consumo_m3.toLocaleString()} m³</Text>
-                      </View>
-                    </View>
-                    <ThemedText style={styles.listItemDetail}>
-                      💧 Agua potable: {item.consumo_m3.toLocaleString()} m³
-                    </ThemedText>
-                    <ThemedText style={styles.listItemDetail}>
-                      🚰 Agua residual: {item.consumo_m3.toLocaleString()} m³ (equivalente)
-                    </ThemedText>
-                    {item.emision_co2e && (
-                      <ThemedText style={styles.listItemEmission}>
-                        💨 Emisión total: {item.emision_co2e.toFixed(2)} kg CO₂e
-                      </ThemedText>
-                    )}
-                  </ThemedView>
-                ))}
-              </ThemedView>
-            )}
-          </>
-        )}
 
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>Volver</Text>
-        </Pressable>
-      </ThemedView>
-    </ScrollView>
+                <ThemedText style={styles.label}>Campus *</ThemedText>
+                <View style={styles.campusGrid}>
+                  {CAMPUS.map((campus) => (
+                    <Pressable
+                      key={campus.id}
+                      style={[
+                        styles.campusButton,
+                        selectedCampus === campus.id && styles.campusButtonSelected,
+                      ]}
+                      onPress={() => setSelectedCampus(campus.id)}
+                      disabled={!!editingId}
+                    >
+                      <Text
+                        style={[
+                          styles.campusButtonText,
+                          selectedCampus === campus.id && styles.campusButtonTextSelected,
+                        ]}
+                      >
+                        {campus.nombre}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <ThemedText style={styles.label}>Consumo de Agua Potable (m³) *</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  value={consumoM3}
+                  onChangeText={setConsumoM3}
+                  keyboardType="numeric"
+                  placeholder="Ej: 500"
+                  placeholderTextColor="#999"
+                />
+
+                {consumoM3 && parseFloat(consumoM3) > 0 && (
+                  <ThemedView style={styles.emisionCard}>
+                    <ThemedText style={styles.emisionTitle}>Emisiones Estimadas:</ThemedText>
+                    <View style={styles.emisionRow}>
+                      <ThemedText style={styles.emisionLabel}>💧 Agua Potable:</ThemedText>
+                      <ThemedText style={styles.emisionValue}>{emisiones.potable} kg CO₂e</ThemedText>
+                    </View>
+                    <View style={styles.emisionRow}>
+                      <ThemedText style={styles.emisionLabel}>🚰 Agua Residual:</ThemedText>
+                      <ThemedText style={styles.emisionValue}>{emisiones.residual} kg CO₂e</ThemedText>
+                    </View>
+                    <View style={[styles.emisionRow, styles.emisionTotal]}>
+                      <ThemedText style={styles.emisionLabelBold}>Total:</ThemedText>
+                      <ThemedText style={styles.emisionValueBold}>{emisiones.total} kg CO₂e</ThemedText>
+                    </View>
+                  </ThemedView>
+                )}
+
+                <Pressable
+                  style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+                  onPress={handleSubmit}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <ThemedText style={styles.submitText}>
+                      {editingId ? 'Actualizar' : 'Guardar Registro'}
+                    </ThemedText>
+                  )}
+                </Pressable>
+
+                {editingId && (
+                  <Pressable style={styles.cancelButton} onPress={resetForm}>
+                    <ThemedText style={styles.cancelText}>Cancelar Edición</ThemedText>
+                  </Pressable>
+                )}
+              </ThemedView>
+
+              <ThemedView style={styles.card}>
+                <ThemedText type="subtitle" style={styles.cardTitle}>
+                  Registros Guardados
+                </ThemedText>
+                {(consumosAgua as any[])?.length === 0 ? (
+                  <ThemedText style={styles.noData}>
+                    No hay registros de agua para este año
+                  </ThemedText>
+                ) : (
+                  (consumosAgua as any[])?.map((item: any) => (
+                    <ThemedView key={item.id} style={styles.listItem}>
+                      <View style={styles.listItemContent}>
+                        <ThemedText type="defaultSemiBold">
+                          💧 {item.campus_nombre}
+                        </ThemedText>
+                        <ThemedText style={styles.listItemDetail}>
+                          Consumo: {item.consumo_m3.toLocaleString()} m³
+                        </ThemedText>
+                        <ThemedText style={styles.listItemDetail}>
+                          Emisión Potable: {item.emision_potable_co2e.toFixed(2)} kg CO₂e
+                        </ThemedText>
+                        <ThemedText style={styles.listItemDetail}>
+                          Emisión Residual: {item.emision_residual_co2e.toFixed(2)} kg CO₂e
+                        </ThemedText>
+                        <ThemedText style={[styles.listItemDetail, { fontWeight: '600', color: '#2E7D32' }]}>
+                          Total: {item.emision_total_co2e.toFixed(2)} kg CO₂e
+                        </ThemedText>
+                      </View>
+                      <View style={styles.listItemActions}>
+                        <Pressable
+                          style={styles.editButton}
+                          onPress={() => handleEdit(item)}
+                        >
+                          <ThemedText style={styles.editButtonText}>✏️</ThemedText>
+                        </Pressable>
+                        <Pressable
+                          style={styles.deleteButton}
+                          onPress={() => handleDelete(item.id)}
+                        >
+                          <ThemedText style={styles.deleteButtonText}>🗑️</ThemedText>
+                        </Pressable>
+                      </View>
+                    </ThemedView>
+                  ))
+                )}
+              </ThemedView>
+            </>
+          )}
+        </ThemedView>
+      </ScrollView>
+
+      <ConfirmModal
+        visible={deleteModalVisible}
+        title="Confirmar Eliminación"
+        message="¿Estás seguro de que deseas eliminar este registro? Esta acción no se puede deshacer."
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        danger
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setDeleteModalVisible(false);
+          setItemToDelete(null);
+        }}
+      />
+    </>
   );
 }
 
@@ -300,62 +370,58 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 20,
+    padding: 16,
+    gap: 16,
   },
-  title: {
-    marginBottom: 16,
+  backButton: {
+    paddingVertical: 8,
+  },
+  backText: {
+    fontSize: 16,
     color: '#2E7D32',
   },
-  description: {
-    fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 24,
-    color: '#666',
+  title: {
+    marginBottom: 8,
   },
-  section: {
-    marginBottom: 24,
+  noOrg: {
+    textAlign: 'center',
+    marginVertical: 20,
+  },
+  card: {
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
+    gap: 12,
+  },
+  cardTitle: {
+    marginBottom: 8,
+  },
+  anoSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  anoButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#E0E0E0',
+  },
+  anoButtonSelected: {
+    backgroundColor: '#2E7D32',
+  },
+  anoText: {
+    fontSize: 16,
+    color: '#424242',
+  },
+  anoTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   label: {
     fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 8,
     fontWeight: '600',
-    color: '#333',
-  },
-  yearSelector: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  yearButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
-  },
-  yearButtonSelected: {
-    borderColor: '#2E7D32',
-    backgroundColor: '#E8F5E9',
-  },
-  yearButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#666',
-  },
-  yearButtonTextSelected: {
-    color: '#2E7D32',
-  },
-  form: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
-  },
-  formTitle: {
-    marginBottom: 16,
-    color: '#2E7D32',
+    marginTop: 8,
   },
   campusGrid: {
     flexDirection: 'row',
@@ -366,158 +432,135 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
+    backgroundColor: '#E0E0E0',
   },
   campusButtonSelected: {
-    borderColor: '#0288D1',
-    backgroundColor: '#E1F5FE',
+    backgroundColor: '#0288D1',
   },
   campusButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#666',
+    color: '#424242',
   },
   campusButtonTextSelected: {
-    color: '#01579B',
+    color: '#FFFFFF',
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#CCCCCC',
   },
-  emissionPreview: {
-    marginTop: 12,
-    padding: 16,
-    backgroundColor: '#E1F5FE',
+  emisionCard: {
+    backgroundColor: '#E8F5E9',
     borderRadius: 8,
+    padding: 12,
     gap: 8,
   },
-  emissionTitle: {
+  emisionTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#01579B',
+    color: '#1B5E20',
     marginBottom: 4,
   },
-  emissionRow: {
+  emisionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  emissionTotal: {
-    marginTop: 8,
+  emisionLabel: {
+    fontSize: 14,
+    color: '#2E7D32',
+  },
+  emisionValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2E7D32',
+  },
+  emisionTotal: {
+    marginTop: 4,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#0288D1',
+    borderTopColor: '#A5D6A7',
   },
-  emissionLabel: {
-    fontSize: 14,
-    color: '#01579B',
-  },
-  emissionValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#0288D1',
-  },
-  emissionLabelBold: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#01579B',
-  },
-  emissionValueBold: {
-    fontSize: 16,
+  emisionLabelBold: {
+    fontSize: 15,
     fontWeight: '700',
-    color: '#0288D1',
+    color: '#1B5E20',
+  },
+  emisionValueBold: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1B5E20',
   },
   submitButton: {
     backgroundColor: '#2E7D32',
-    padding: 14,
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 8,
   },
   submitButtonDisabled: {
     opacity: 0.6,
   },
-  submitButtonText: {
-    color: '#fff',
+  submitText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  listSection: {
-    marginBottom: 24,
+  cancelButton: {
+    backgroundColor: '#E0E0E0',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
   },
-  listTitle: {
-    marginBottom: 16,
-    color: '#2E7D32',
+  cancelText: {
+    color: '#424242',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  noData: {
+    textAlign: 'center',
+    fontStyle: 'italic',
+    color: '#757575',
   },
   listItem: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  listItemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
     marginBottom: 8,
   },
-  listItemTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  badge: {
-    backgroundColor: '#0288D1',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
+  listItemContent: {
+    flex: 1,
+    gap: 4,
   },
   listItemDetail: {
     fontSize: 14,
-    lineHeight: 22,
-    color: '#666',
-    marginTop: 4,
+    color: '#757575',
   },
-  listItemEmission: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: '#2E7D32',
-    fontWeight: '600',
-    marginTop: 8,
+  listItemActions: {
+    flexDirection: 'row',
+    gap: 8,
   },
-  primaryButton: {
-    backgroundColor: '#2E7D32',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
+  editButton: {
+    padding: 8,
+    backgroundColor: '#FFF3E0',
+    borderRadius: 6,
   },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  editButtonText: {
+    fontSize: 18,
   },
-  backButton: {
-    backgroundColor: '#666',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
+  deleteButton: {
+    padding: 8,
+    backgroundColor: '#FFEBEE',
+    borderRadius: 6,
   },
-  backButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  deleteButtonText: {
+    fontSize: 18,
   },
 });
