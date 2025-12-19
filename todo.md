@@ -296,3 +296,18 @@
 - [ ] Agregar histórico de cambios en factores (opcional)
 - [x] Recalcular automáticamente emisiones al actualizar factores
 - [ ] Agregar botón para restaurar factores por defecto
+
+
+## Importación Masiva de Datos (Nueva solicitud)
+- [x] Instalar dependencias para manejo de Excel (xlsx)
+- [x] Crear generador de plantillas Excel para cada tipo de dato
+- [x] Crear endpoint de API para generar plantillas descargables
+- [x] Crear endpoint de API para importar datos desde Excel
+- [x] Implementar validación de datos importados
+- [x] Crear pantalla de importación masiva
+- [x] Agregar selector de tipo de dato a importar
+- [x] Implementar carga de archivos Excel
+- [x] Mostrar vista previa de datos antes de importar
+- [x] Implementar importación con manejo de errores
+- [x] Agregar enlace desde pantalla de Datos
+- [x] Mostrar reporte de importación (éxitos y errores)

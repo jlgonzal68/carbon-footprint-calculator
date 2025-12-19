@@ -33,6 +33,14 @@ const categories: DataCategory[] = [
     color: '#1976D2',
   },
   {
+    id: 'importar',
+    title: 'Importación Masiva',
+    description: 'Importar datos desde Excel',
+    icon: 'paperplane.fill',
+    route: '/importar-datos',
+    color: '#7B1FA2',
+  },
+  {
     id: 'combustibles',
     title: 'Combustibles',
     description: 'Gasolina y diesel consumidos',

@@ -1353,6 +1353,100 @@ export const carbonRouter = router({
       }
     }),
 
+  importarDatosMasivos: protectedProcedure
+    .input(z.object({
+      tipo: z.enum(['combustibles', 'energia', 'aires_acondicionados', 'extintores', 'residuos', 'agua']),
+      ano_inventario_id: z.number().int().positive(),
+      datos: z.array(z.any()),
+    }))
+    .mutation(async ({ input }) => {
+      const { tipo, ano_inventario_id, datos } = input;
+      const db = await getConnection();
+      const resultados = { exitosos: 0, errores: [] as any[] };
+
+      try {
+        // Obtener factores de emisión del año
+        const [factoresRows] = await db.execute(
+          `SELECT * FROM factores_emision_ano WHERE ano_inventario_id = ?`,
+          [ano_inventario_id]
+        );
+        const factores = (factoresRows as any[])[0];
+
+        for (let i = 0; i < datos.length; i++) {
+          const fila = datos[i];
+          try {
+            if (tipo === 'combustibles') {
+              const factor = fila.tipo_combustible === 'gasolina' 
+                ? factores.gasolina_kg_co2e_por_litro 
+                : factores.diesel_kg_co2e_por_litro;
+              const emision_co2e = fila.cantidad * factor;
+              await db.execute(
+                `INSERT INTO consumo_combustible (ano_inventario_id, tipo_combustible, cantidad, factor_emision, emision_co2e, fecha_registro)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [ano_inventario_id, fila.tipo_combustible, fila.cantidad, factor, emision_co2e, fila.fecha_registro || new Date()]
+              );
+            } else if (tipo === 'energia') {
+              const emision_co2e = fila.cantidad_kwh * factores.energia_kg_co2e_por_kwh;
+              await db.execute(
+                `INSERT INTO consumo_energia (ano_inventario_id, campus_id, cantidad_kwh, factor_emision, emision_co2e, fecha_registro)
+                 VALUES (?, ?, ?, ?, ?, ?)`,
+                [ano_inventario_id, fila.campus_id, fila.cantidad_kwh, factores.energia_kg_co2e_por_kwh, emision_co2e, fila.fecha_registro || new Date()]
+              );
+            } else if (tipo === 'aires_acondicionados') {
+              const factor = fila.tipo_refrigerante === 'R-22' ? factores.r22_kg_co2e_por_kg
+                : fila.tipo_refrigerante === 'R-410A' ? factores.r410a_kg_co2e_por_kg
+                : factores.r134a_kg_co2e_por_kg;
+              const emision_total_co2e = fila.capacidad_kg * factor;
+              await db.execute(
+                `INSERT INTO inventario_aires_acond (ano_inventario_id, campus_id, tipo_equipo, capacidad_btu, capacidad_kg, tipo_refrigerante, cantidad, factor_emision, emision_total_co2e)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [ano_inventario_id, fila.campus_id, fila.tipo_equipo, fila.capacidad_btu, fila.capacidad_kg, fila.tipo_refrigerante, fila.cantidad, factor, emision_total_co2e]
+              );
+            } else if (tipo === 'extintores') {
+              const factor = fila.tipo === 'CO2' ? factores.co2_extintor_kg_co2e_por_kg : factores.pqs_extintor_kg_co2e_por_kg;
+              const emision_co2e = fila.peso_kg * fila.cantidad * factor;
+              await db.execute(
+                `INSERT INTO inventario_extintores (ano_inventario_id, campus_id, tipo, peso_kg, cantidad, factor_emision, emision_co2e)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [ano_inventario_id, fila.campus_id, fila.tipo, fila.peso_kg, fila.cantidad, factor, emision_co2e]
+              );
+            } else if (tipo === 'residuos') {
+              const factor = fila.tipo === 'relleno' ? factores.residuo_relleno_kg_co2e_por_kg
+                : fila.tipo === 'compostado' ? factores.residuo_compostado_kg_co2e_por_kg
+                : fila.tipo === 'peligroso' ? factores.residuo_peligroso_kg_co2e_por_kg
+                : factores.residuo_reciclado_kg_co2e_por_kg;
+              const emision_co2e = fila.cantidad_kg * factor;
+              await db.execute(
+                `INSERT INTO residuos_solidos (ano_inventario_id, campus_id, tipo, cantidad_kg, factor_emision, emision_co2e, fecha_registro)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [ano_inventario_id, fila.campus_id, fila.tipo, fila.cantidad_kg, factor, emision_co2e, fila.fecha_registro || new Date()]
+              );
+            } else if (tipo === 'agua') {
+              const emision_potable_co2e = fila.agua_potable_m3 * factores.agua_potable_kg_co2e_por_m3;
+              const emision_residual_co2e = fila.agua_residual_m3 * factores.agua_residual_kg_co2e_por_m3;
+              const emision_total_co2e = emision_potable_co2e + emision_residual_co2e;
+              await db.execute(
+                `INSERT INTO consumo_agua (ano_inventario_id, campus_id, agua_potable_m3, agua_residual_m3, factor_emision_potable, factor_emision_residual, emision_potable_co2e, emision_residual_co2e, emision_total_co2e, fecha_registro)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [ano_inventario_id, fila.campus_id, fila.agua_potable_m3, fila.agua_residual_m3, factores.agua_potable_kg_co2e_por_m3, factores.agua_residual_kg_co2e_por_m3, emision_potable_co2e, emision_residual_co2e, emision_total_co2e, fila.fecha_registro || new Date()]
+              );
+            }
+            resultados.exitosos++;
+          } catch (error: any) {
+            resultados.errores.push({ fila: i + 2, error: error.message });
+          }
+        }
+
+        // Recalcular huella de carbono
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return resultados;
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
 });
 
 // ============ FUNCIONES AUXILIARES ============
