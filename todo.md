@@ -140,23 +140,23 @@
 - [x] Crear endpoints para factores de emisión
 - [x] Crear endpoints para consumo de combustibles
 - [x] Crear endpoints para consumo de energía
-- [ ] Crear endpoints para inventario de aires acondicionados
-- [ ] Crear endpoints para inventario de extintores
-- [ ] Crear endpoints para residuos sólidos
-- [ ] Crear endpoints para consumo de agua
+- [x] Crear endpoints para inventario de aires acondicionados
+- [x] Crear endpoints para inventario de extintores
+- [x] Crear endpoints para residuos sólidos
+- [x] Crear endpoints para consumo de agua
 - [x] Crear endpoint para cálculo de huella de carbono
-- [ ] Crear endpoint para generación de reportes
+- [x] Crear endpoint para generación de reportes
 
 ## Cálculos y Lógica de Negocio
 - [x] Implementar cálculo de emisiones de combustibles
 - [x] Implementar cálculo de emisiones de energía
-- [ ] Implementar cálculo de emisiones de aires acondicionados
-- [ ] Implementar cálculo de emisiones de extintores
-- [ ] Implementar cálculo de emisiones de residuos
-- [ ] Implementar cálculo de emisiones de agua
+- [x] Implementar cálculo de emisiones de aires acondicionados
+- [x] Implementar cálculo de emisiones de extintores
+- [x] Implementar cálculo de emisiones de residuos
+- [x] Implementar cálculo de emisiones de agua
 - [x] Implementar agregación por alcance
-- [ ] Implementar agregación por campus
-- [ ] Implementar comparativa entre años
+- [x] Implementar agregación por campus
+- [x] Implementar comparativa entre años
 
 ## Validaciones
 - [ ] Validar campos requeridos
@@ -193,3 +193,19 @@
 - [ ] Documentar modelo de datos
 - [ ] Documentar fórmulas de cálculo
 - [ ] Crear guía de usuario
+
+
+## Nuevas Funcionalidades Web Completas (Solicitadas)
+- [x] Crear pantalla de gestión de organizaciones (crear, editar, listar)
+- [x] Crear pantalla de gestión de años de inventario (crear, duplicar, eliminar)
+- [ ] Completar formularios de ingreso de combustibles con validaciones
+- [ ] Completar formularios de ingreso de energía por campus
+- [ ] Crear formularios completos de aires acondicionados
+- [ ] Crear formularios completos de extintores
+- [ ] Crear formularios completos de residuos sólidos
+- [ ] Crear formularios completos de agua potable y residual
+- [ ] Implementar gráficos interactivos en dashboard (Chart.js o Recharts)
+- [ ] Crear pantalla de reportes con visualizaciones completas
+- [ ] Implementar exportación de reportes a PDF
+- [x] Optimizar diseño para pantallas de escritorio
+- [ ] Agregar gestión de factores de emisión (editar, actualizar)

@@ -584,6 +584,533 @@ export const carbonRouter = router({
         throw error;
       }
     }),
+});
+
+// ============ FUNCIONES AUXILIARES ============
+
+async function insertDefaultFactores(db: mysql.Connection, ano_inventario_id: number) {
+  const factoresDefault = [
+    // Combustibles
+    { categoria: 'combustible', tipo: 'gasolina', factor_emision: 7.6181, unidad: 'kg CO2e/gal', fuente: 'Calculadora ITM' },
+    { categoria: 'combustible', tipo: 'diesel', factor_emision: 10.149, unidad: 'kg CO2e/gal', fuente: 'Calculadora ITM' },
+    // Energía
+    { categoria: 'energia', tipo: null, factor_emision: 0.18, unidad: 'kg CO2e/kWh', fuente: 'Factor de red Colombia' },
+    // Agua
+    { categoria: 'agua_potable', tipo: null, factor_emision: 0.344, unidad: 'kg CO2e/m3', fuente: 'Calculadora ITM' },
+    { categoria: 'agua_residual', tipo: null, factor_emision: 0.272, unidad: 'kg CO2e/m3', fuente: 'Calculadora ITM' },
+    // Residuos
+    { categoria: 'residuo_relleno', tipo: null, factor_emision: 0.5, unidad: 'kg CO2e/kg', fuente: 'Estimado' },
+    { categoria: 'residuo_compostado', tipo: null, factor_emision: 0.1, unidad: 'kg CO2e/kg', fuente: 'Estimado' },
+    { categoria: 'residuo_peligroso', tipo: null, factor_emision: 1.5, unidad: 'kg CO2e/kg', fuente: 'Estimado' },
+    { categoria: 'residuo_reciclado', tipo: null, factor_emision: 0.05, unidad: 'kg CO2e/kg', fuente: 'Estimado' },
+  ];
+
+  for (const factor of factoresDefault) {
+    await db.execute(
+      `INSERT INTO factores_emision (ano_inventario_id, categoria, tipo, factor_emision, unidad, fuente) 
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [ano_inventario_id, factor.categoria, factor.tipo, factor.factor_emision, factor.unidad, factor.fuente]
+    );
+  }
+}
+
+async function recalcularHuellaCarbono(db: mysql.Connection, ano_inventario_id: number) {
+  // Calcular Alcance 1 (combustibles + aires acondicionados + extintores)
+  const [alcance1Result] = await db.execute(
+    `SELECT 
+      COALESCE(SUM(cc.emision_co2e), 0) +
+      COALESCE(SUM(iaa.emision_total_co2e), 0) +
+      COALESCE(SUM(ie.emision_co2e), 0) as alcance_1
+    FROM ano_inventario ai
+    LEFT JOIN consumo_combustible cc ON ai.id = cc.ano_inventario_id
+    LEFT JOIN inventario_aires_acond iaa ON ai.id = iaa.ano_inventario_id
+    LEFT JOIN inventario_extintores ie ON ai.id = ie.ano_inventario_id
+    WHERE ai.id = ?`,
+    [ano_inventario_id]
+  );
+
+  // Calcular Alcance 2 (energía eléctrica)
+  const [alcance2Result] = await db.execute(
+    `SELECT COALESCE(SUM(emision_co2e), 0) as alcance_2
+    FROM consumo_energia
+    WHERE ano_inventario_id = ?`,
+    [ano_inventario_id]
+  );
+
+  // Calcular Alcance 3 (agua + residuos)
+  const [alcance3Result] = await db.execute(
+    `SELECT 
+      COALESCE(SUM(ca.emision_total_co2e), 0) +
+      COALESCE(SUM(rs.emision_co2e), 0) as alcance_3
+    FROM ano_inventario ai
+    LEFT JOIN consumo_agua ca ON ai.id = ca.ano_inventario_id
+    LEFT JOIN residuos_solidos rs ON ai.id = rs.ano_inventario_id
+    WHERE ai.id = ?`,
+    [ano_inventario_id]
+  );
+
+  const alcance_1 = (alcance1Result as any[])[0].alcance_1;
+  const alcance_2 = (alcance2Result as any[])[0].alcance_2;
+  const alcance_3 = (alcance3Result as any[])[0].alcance_3;
+  const total_co2e = alcance_1 + alcance_2 + alcance_3;
+
+  // Actualizar resumen
+  await db.execute(
+    `UPDATE resumen_huella_carbono 
+     SET alcance_1 = ?, alcance_2 = ?, alcance_3 = ?, total_co2e = ?
+     WHERE ano_inventario_id = ?`,
+    [alcance_1, alcance_2, alcance_3, total_co2e, ano_inventario_id]
+  );
+}
+
+  // ============ AIRES ACONDICIONADOS ============
+  createAireAcondicionado: protectedProcedure
+    .input(
+      z.object({
+        ano_inventario_id: z.number().int().positive(),
+        campus_id: z.number().int().positive(),
+        tipo_equipo: z.enum(['MiniSplit', 'Cassete', 'Pisotecho']),
+        capacidad_btu: z.number().int().positive(),
+        capacidad_kg: z.number().positive(),
+        cantidad: z.number().int().positive(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { ano_inventario_id, campus_id, tipo_equipo, capacidad_btu, capacidad_kg, cantidad } = input;
+      const db = await getConnection();
+
+      try {
+        // Parámetros para cálculo de emisiones de aires acondicionados
+        const gas_refrigerante = 'R-410A';
+        const gwp = 2088; // Global Warming Potential
+        const k_instalacion = 0.02; // 2% de fuga en instalación
+        const x_operacion = 0.10; // 10% de fuga anual en operación
+
+        // Cálculo de emisiones
+        const emision_instalacion = capacidad_kg * k_instalacion * gwp * cantidad / 1000; // kg CO2e
+        const emision_operacion = capacidad_kg * x_operacion * gwp * cantidad / 1000; // kg CO2e
+        const emision_total_co2e = emision_instalacion + emision_operacion;
+
+        const [result] = await db.execute(
+          `INSERT INTO inventario_aires_acond 
+           (ano_inventario_id, campus_id, tipo_equipo, capacidad_btu, capacidad_kg, cantidad, 
+            gas_refrigerante, gwp, k_instalacion, x_operacion, emision_instalacion, emision_operacion, emision_total_co2e) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [ano_inventario_id, campus_id, tipo_equipo, capacidad_btu, capacidad_kg, cantidad,
+           gas_refrigerante, gwp, k_instalacion, x_operacion, emision_instalacion, emision_operacion, emision_total_co2e]
+        );
+
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true, id: (result as any).insertId, emision_total_co2e };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  getAiresAcondicionados: protectedProcedure
+    .input(z.object({ ano_inventario_id: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT iaa.*, c.nombre as campus_nombre 
+           FROM inventario_aires_acond iaa
+           JOIN campus c ON iaa.campus_id = c.id
+           WHERE iaa.ano_inventario_id = ? 
+           ORDER BY c.nombre, iaa.tipo_equipo`,
+          [input.ano_inventario_id]
+        );
+        await db.end();
+        return rows;
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  deleteAireAcondicionado: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        // Obtener ano_inventario_id antes de eliminar
+        const [rows] = await db.execute(
+          `SELECT ano_inventario_id FROM inventario_aires_acond WHERE id = ?`,
+          [input.id]
+        );
+
+        if ((rows as any[]).length === 0) {
+          await db.end();
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Aire acondicionado no encontrado' });
+        }
+
+        const ano_inventario_id = (rows as any[])[0].ano_inventario_id;
+
+        await db.execute(`DELETE FROM inventario_aires_acond WHERE id = ?`, [input.id]);
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  // ============ EXTINTORES ============
+  createExtintor: protectedProcedure
+    .input(
+      z.object({
+        ano_inventario_id: z.number().int().positive(),
+        campus_id: z.number().int().positive(),
+        tipo: z.string(),
+        peso_kg: z.number().positive(),
+        cantidad: z.number().int().positive(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { ano_inventario_id, campus_id, tipo, peso_kg, cantidad } = input;
+      const db = await getConnection();
+
+      try {
+        // Obtener factor de emisión para extintores
+        const [factores] = await db.execute(
+          `SELECT factor_emision FROM factores_emision 
+           WHERE ano_inventario_id = ? AND categoria = 'extintor'`,
+          [ano_inventario_id]
+        );
+
+        let factor_emision = 0.001; // Factor por defecto
+        if ((factores as any[]).length > 0) {
+          factor_emision = (factores as any[])[0].factor_emision;
+        }
+
+        const emision_co2e = peso_kg * cantidad * factor_emision;
+
+        const [result] = await db.execute(
+          `INSERT INTO inventario_extintores 
+           (ano_inventario_id, campus_id, tipo, peso_kg, cantidad, factor_emision, emision_co2e) 
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [ano_inventario_id, campus_id, tipo, peso_kg, cantidad, factor_emision, emision_co2e]
+        );
+
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true, id: (result as any).insertId, emision_co2e };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  getExtintores: protectedProcedure
+    .input(z.object({ ano_inventario_id: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT ie.*, c.nombre as campus_nombre 
+           FROM inventario_extintores ie
+           JOIN campus c ON ie.campus_id = c.id
+           WHERE ie.ano_inventario_id = ? 
+           ORDER BY c.nombre, ie.tipo`,
+          [input.ano_inventario_id]
+        );
+        await db.end();
+        return rows;
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  deleteExtintor: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT ano_inventario_id FROM inventario_extintores WHERE id = ?`,
+          [input.id]
+        );
+
+        if ((rows as any[]).length === 0) {
+          await db.end();
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Extintor no encontrado' });
+        }
+
+        const ano_inventario_id = (rows as any[])[0].ano_inventario_id;
+
+        await db.execute(`DELETE FROM inventario_extintores WHERE id = ?`, [input.id]);
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  // ============ RESIDUOS SÓLIDOS ============
+  createResiduoSolido: protectedProcedure
+    .input(
+      z.object({
+        ano_inventario_id: z.number().int().positive(),
+        campus_id: z.number().int().positive(),
+        tipo: z.enum(['relleno', 'compostado', 'peligroso', 'reciclado']),
+        cantidad_kg: z.number().positive(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { ano_inventario_id, campus_id, tipo, cantidad_kg } = input;
+      const db = await getConnection();
+
+      try {
+        // Obtener factor de emisión según tipo de residuo
+        const [factores] = await db.execute(
+          `SELECT factor_emision FROM factores_emision 
+           WHERE ano_inventario_id = ? AND categoria = ?`,
+          [ano_inventario_id, `residuo_${tipo}`]
+        );
+
+        if ((factores as any[]).length === 0) {
+          await db.end();
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Factor de emisión no encontrado para este tipo de residuo',
+          });
+        }
+
+        const factor_emision = (factores as any[])[0].factor_emision;
+        const emision_co2e = cantidad_kg * factor_emision;
+
+        // Verificar si ya existe
+        const [existing] = await db.execute(
+          `SELECT id FROM residuos_solidos WHERE ano_inventario_id = ? AND campus_id = ? AND tipo = ?`,
+          [ano_inventario_id, campus_id, tipo]
+        );
+
+        if ((existing as any[]).length > 0) {
+          await db.execute(
+            `UPDATE residuos_solidos SET cantidad_kg = ?, factor_emision = ?, emision_co2e = ? 
+             WHERE ano_inventario_id = ? AND campus_id = ? AND tipo = ?`,
+            [cantidad_kg, factor_emision, emision_co2e, ano_inventario_id, campus_id, tipo]
+          );
+        } else {
+          await db.execute(
+            `INSERT INTO residuos_solidos 
+             (ano_inventario_id, campus_id, tipo, cantidad_kg, factor_emision, emision_co2e) 
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [ano_inventario_id, campus_id, tipo, cantidad_kg, factor_emision, emision_co2e]
+          );
+        }
+
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true, emision_co2e };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  getResiduosSolidos: protectedProcedure
+    .input(z.object({ ano_inventario_id: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT rs.*, c.nombre as campus_nombre 
+           FROM residuos_solidos rs
+           JOIN campus c ON rs.campus_id = c.id
+           WHERE rs.ano_inventario_id = ? 
+           ORDER BY c.nombre, rs.tipo`,
+          [input.ano_inventario_id]
+        );
+        await db.end();
+        return rows;
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  // ============ AGUA ============
+  createConsumoAgua: protectedProcedure
+    .input(
+      z.object({
+        ano_inventario_id: z.number().int().positive(),
+        campus_id: z.number().int().positive(),
+        agua_potable_m3: z.number().nonnegative(),
+        agua_residual_m3: z.number().nonnegative(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const { ano_inventario_id, campus_id, agua_potable_m3, agua_residual_m3 } = input;
+      const db = await getConnection();
+
+      try {
+        // Obtener factores de emisión
+        const [factorPotable] = await db.execute(
+          `SELECT factor_emision FROM factores_emision 
+           WHERE ano_inventario_id = ? AND categoria = 'agua_potable'`,
+          [ano_inventario_id]
+        );
+
+        const [factorResidual] = await db.execute(
+          `SELECT factor_emision FROM factores_emision 
+           WHERE ano_inventario_id = ? AND categoria = 'agua_residual'`,
+          [ano_inventario_id]
+        );
+
+        if ((factorPotable as any[]).length === 0 || (factorResidual as any[]).length === 0) {
+          await db.end();
+          throw new TRPCError({
+            code: 'NOT_FOUND',
+            message: 'Factores de emisión de agua no encontrados',
+          });
+        }
+
+        const factor_emision_potable = (factorPotable as any[])[0].factor_emision;
+        const factor_emision_residual = (factorResidual as any[])[0].factor_emision;
+
+        const emision_potable_co2e = agua_potable_m3 * factor_emision_potable;
+        const emision_residual_co2e = agua_residual_m3 * factor_emision_residual;
+        const emision_total_co2e = emision_potable_co2e + emision_residual_co2e;
+
+        // Verificar si ya existe
+        const [existing] = await db.execute(
+          `SELECT id FROM consumo_agua WHERE ano_inventario_id = ? AND campus_id = ?`,
+          [ano_inventario_id, campus_id]
+        );
+
+        if ((existing as any[]).length > 0) {
+          await db.execute(
+            `UPDATE consumo_agua 
+             SET agua_potable_m3 = ?, agua_residual_m3 = ?, 
+                 factor_emision_potable = ?, factor_emision_residual = ?,
+                 emision_potable_co2e = ?, emision_residual_co2e = ?, emision_total_co2e = ?
+             WHERE ano_inventario_id = ? AND campus_id = ?`,
+            [agua_potable_m3, agua_residual_m3, factor_emision_potable, factor_emision_residual,
+             emision_potable_co2e, emision_residual_co2e, emision_total_co2e, ano_inventario_id, campus_id]
+          );
+        } else {
+          await db.execute(
+            `INSERT INTO consumo_agua 
+             (ano_inventario_id, campus_id, agua_potable_m3, agua_residual_m3, 
+              factor_emision_potable, factor_emision_residual, emision_potable_co2e, 
+              emision_residual_co2e, emision_total_co2e) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [ano_inventario_id, campus_id, agua_potable_m3, agua_residual_m3,
+             factor_emision_potable, factor_emision_residual, emision_potable_co2e,
+             emision_residual_co2e, emision_total_co2e]
+          );
+        }
+
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true, emision_total_co2e };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  getConsumosAgua: protectedProcedure
+    .input(z.object({ ano_inventario_id: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT ca.*, c.nombre as campus_nombre 
+           FROM consumo_agua ca
+           JOIN campus c ON ca.campus_id = c.id
+           WHERE ca.ano_inventario_id = ? 
+           ORDER BY c.nombre`,
+          [input.ano_inventario_id]
+        );
+        await db.end();
+        return rows;
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  // ============ REPORTES ADICIONALES ============
+  getEmisionesPorCategoria: protectedProcedure
+    .input(z.object({ ano_inventario_id: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [combustibles] = await db.execute(
+          `SELECT COALESCE(SUM(emision_co2e), 0) as total FROM consumo_combustible WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+
+        const [energia] = await db.execute(
+          `SELECT COALESCE(SUM(emision_co2e), 0) as total FROM consumo_energia WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+
+        const [aires] = await db.execute(
+          `SELECT COALESCE(SUM(emision_total_co2e), 0) as total FROM inventario_aires_acond WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+
+        const [extintores] = await db.execute(
+          `SELECT COALESCE(SUM(emision_co2e), 0) as total FROM inventario_extintores WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+
+        const [residuos] = await db.execute(
+          `SELECT COALESCE(SUM(emision_co2e), 0) as total FROM residuos_solidos WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+
+        const [agua] = await db.execute(
+          `SELECT COALESCE(SUM(emision_total_co2e), 0) as total FROM consumo_agua WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+
+        await db.end();
+
+        return {
+          combustibles: (combustibles as any[])[0].total,
+          energia: (energia as any[])[0].total,
+          aires_acondicionados: (aires as any[])[0].total,
+          extintores: (extintores as any[])[0].total,
+          residuos: (residuos as any[])[0].total,
+          agua: (agua as any[])[0].total,
+        };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  getComparativaAnual: protectedProcedure
+    .input(z.object({ organizacion_id: z.number().int().positive() }))
+    .query(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT ai.ano, rhc.alcance_1, rhc.alcance_2, rhc.alcance_3, rhc.total_co2e
+           FROM ano_inventario ai
+           JOIN resumen_huella_carbono rhc ON ai.id = rhc.ano_inventario_id
+           WHERE ai.organizacion_id = ?
+           ORDER BY ai.ano`,
+          [input.organizacion_id]
+        );
+        await db.end();
+        return rows;
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
 
   // ============ EXTINTORES ============
   createExtintor: protectedProcedure
@@ -838,103 +1365,4 @@ export const carbonRouter = router({
         throw error;
       }
     }),
-
-  getConsumosAgua: protectedProcedure
-    .input(z.object({ ano_inventario_id: z.number().int().positive() }))
-    .query(async ({ input }) => {
-      const db = await getConnection();
-      try {
-        const [rows] = await db.execute(
-          `SELECT ca.*, c.nombre as campus_nombre 
-           FROM consumo_agua ca
-           JOIN campus c ON ca.campus_id = c.id
-           WHERE ca.ano_inventario_id = ? 
-           ORDER BY c.nombre`,
-          [input.ano_inventario_id]
-        );
-        await db.end();
-        return rows;
-      } catch (error) {
-        await db.end();
-        throw error;
-      }
-    }),
-
 });
-
-// ============ FUNCIONES AUXILIARES ============
-
-async function insertDefaultFactores(db: mysql.Connection, ano_inventario_id: number) {
-  const factoresDefault = [
-    // Combustibles
-    { categoria: 'combustible', tipo: 'gasolina', factor_emision: 7.6181, unidad: 'kg CO2e/gal', fuente: 'Calculadora ITM' },
-    { categoria: 'combustible', tipo: 'diesel', factor_emision: 10.149, unidad: 'kg CO2e/gal', fuente: 'Calculadora ITM' },
-    // Energía
-    { categoria: 'energia', tipo: null, factor_emision: 0.18, unidad: 'kg CO2e/kWh', fuente: 'Factor de red Colombia' },
-    // Agua
-    { categoria: 'agua_potable', tipo: null, factor_emision: 0.344, unidad: 'kg CO2e/m3', fuente: 'Calculadora ITM' },
-    { categoria: 'agua_residual', tipo: null, factor_emision: 0.272, unidad: 'kg CO2e/m3', fuente: 'Calculadora ITM' },
-    // Residuos
-    { categoria: 'residuo_relleno', tipo: null, factor_emision: 0.5, unidad: 'kg CO2e/kg', fuente: 'Estimado' },
-    { categoria: 'residuo_compostado', tipo: null, factor_emision: 0.1, unidad: 'kg CO2e/kg', fuente: 'Estimado' },
-    { categoria: 'residuo_peligroso', tipo: null, factor_emision: 1.5, unidad: 'kg CO2e/kg', fuente: 'Estimado' },
-    { categoria: 'residuo_reciclado', tipo: null, factor_emision: 0.05, unidad: 'kg CO2e/kg', fuente: 'Estimado' },
-  ];
-
-  for (const factor of factoresDefault) {
-    await db.execute(
-      `INSERT INTO factores_emision (ano_inventario_id, categoria, tipo, factor_emision, unidad, fuente) 
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [ano_inventario_id, factor.categoria, factor.tipo, factor.factor_emision, factor.unidad, factor.fuente]
-    );
-  }
-}
-
-async function recalcularHuellaCarbono(db: mysql.Connection, ano_inventario_id: number) {
-  // Calcular Alcance 1 (combustibles + aires acondicionados + extintores)
-  const [alcance1Result] = await db.execute(
-    `SELECT 
-      COALESCE(SUM(cc.emision_co2e), 0) +
-      COALESCE(SUM(iaa.emision_total_co2e), 0) +
-      COALESCE(SUM(ie.emision_co2e), 0) as alcance_1
-    FROM ano_inventario ai
-    LEFT JOIN consumo_combustible cc ON ai.id = cc.ano_inventario_id
-    LEFT JOIN inventario_aires_acond iaa ON ai.id = iaa.ano_inventario_id
-    LEFT JOIN inventario_extintores ie ON ai.id = ie.ano_inventario_id
-    WHERE ai.id = ?`,
-    [ano_inventario_id]
-  );
-
-  // Calcular Alcance 2 (energía eléctrica)
-  const [alcance2Result] = await db.execute(
-    `SELECT COALESCE(SUM(emision_co2e), 0) as alcance_2
-    FROM consumo_energia
-    WHERE ano_inventario_id = ?`,
-    [ano_inventario_id]
-  );
-
-  // Calcular Alcance 3 (agua + residuos)
-  const [alcance3Result] = await db.execute(
-    `SELECT 
-      COALESCE(SUM(ca.emision_total_co2e), 0) +
-      COALESCE(SUM(rs.emision_co2e), 0) as alcance_3
-    FROM ano_inventario ai
-    LEFT JOIN consumo_agua ca ON ai.id = ca.ano_inventario_id
-    LEFT JOIN residuos_solidos rs ON ai.id = rs.ano_inventario_id
-    WHERE ai.id = ?`,
-    [ano_inventario_id]
-  );
-
-  const alcance_1 = (alcance1Result as any[])[0].alcance_1;
-  const alcance_2 = (alcance2Result as any[])[0].alcance_2;
-  const alcance_3 = (alcance3Result as any[])[0].alcance_3;
-  const total_co2e = alcance_1 + alcance_2 + alcance_3;
-
-  // Actualizar resumen
-  await db.execute(
-    `UPDATE resumen_huella_carbono 
-     SET alcance_1 = ?, alcance_2 = ?, alcance_3 = ?, total_co2e = ?
-     WHERE ano_inventario_id = ?`,
-    [alcance_1, alcance_2, alcance_3, total_co2e, ano_inventario_id]
-  );
-}
