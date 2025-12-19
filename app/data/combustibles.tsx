@@ -6,6 +6,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { ConfirmModal } from '@/components/confirm-modal';
 import { trpc } from '@/lib/trpc';
+import { usePermissions } from '@/hooks/use-permissions';
+import { ProtectedAction } from '@/components/protected-action';
 import { useAuth } from '@/hooks/use-auth';
 
 export default function CombustiblesScreen() {

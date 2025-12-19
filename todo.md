@@ -364,3 +364,21 @@
 - [ ] Implementar control de acceso en gestión de organizaciones
 - [ ] Mostrar indicador de rol actual del usuario en la interfaz
 - [x] Agregar enlace desde Configuración
+
+
+## Control de Acceso Basado en Roles (Nueva solicitud)
+- [x] Crear hook personalizado usePermissions para verificar permisos
+- [x] Crear componente ProtectedAction para ocultar/deshabilitar acciones según permisos
+- [x] Implementar control en formulario de combustibles
+- [x] Implementar control en formulario de energía
+- [x] Implementar control en formulario de aires acondicionados
+- [x] Implementar control en formulario de extintores
+- [x] Implementar control en formulario de residuos
+- [x] Implementar control en formulario de agua
+- [ ] Implementar control en pantalla de factores de emisión
+- [ ] Implementar control en pantalla de metas
+- [ ] Implementar control en pantalla de organizaciones
+- [ ] Implementar control en pantalla de años de inventario
+- [ ] Implementar control en pantalla de usuarios (solo administradores)
+- [ ] Mostrar indicador de rol actual en el header/dashboard
+- [x] Agregar mensajes informativos cuando el usuario no tiene permisos
