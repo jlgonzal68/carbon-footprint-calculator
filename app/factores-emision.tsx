@@ -5,6 +5,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/hooks/use-auth';
+import { usePermissions } from '@/hooks/use-permissions';
+import { ProtectedAction } from '@/components/protected-action';
 import { router } from 'expo-router';
 
 interface FactorField {
@@ -62,6 +64,7 @@ export default function FactoresEmisionScreen() {
 
   const { data: organizaciones } = trpc.carbon.getOrganizaciones.useQuery(undefined, { enabled: !!user });
   const organizacion = organizaciones && Array.isArray(organizaciones) && organizaciones.length > 0 ? organizaciones[0] : null;
+  const permissions = usePermissions((organizacion as any)?.id);
 
   const { data: anosInventario } = trpc.carbon.getAnosInventario.useQuery(
     { organizacion_id: (organizacion as any)?.id },
@@ -283,22 +286,26 @@ export default function FactoresEmisionScreen() {
                       >
                         <ThemedText style={styles.cancelButtonText}>Cancelar</ThemedText>
                       </Pressable>
-                      <Pressable
-                        style={[styles.button, styles.saveButton, saving && styles.saveButtonDisabled]}
-                        onPress={handleSave}
-                        disabled={saving}
-                      >
-                        {saving ? (
-                          <ActivityIndicator color="#FFFFFF" />
-                        ) : (
-                          <ThemedText style={styles.saveButtonText}>💾 Guardar Cambios</ThemedText>
-                        )}
-                      </Pressable>
+                      <ProtectedAction permission="gestionar_factores" organizacionId={(organizacion as any)?.id} hide={true}>
+                        <Pressable
+                          style={[styles.button, styles.saveButton, saving && styles.saveButtonDisabled]}
+                          onPress={handleSave}
+                          disabled={saving}
+                        >
+                          {saving ? (
+                            <ActivityIndicator color="#FFFFFF" />
+                          ) : (
+                            <ThemedText style={styles.saveButtonText}>💾 Guardar Cambios</ThemedText>
+                          )}
+                        </Pressable>
+                      </ProtectedAction>
                     </>
                   ) : (
-                    <Pressable style={[styles.button, styles.editButton]} onPress={handleEdit}>
-                      <ThemedText style={styles.editButtonText}>✏️ Editar Factores</ThemedText>
-                    </Pressable>
+                    <ProtectedAction permission="gestionar_factores" organizacionId={(organizacion as any)?.id} hide={true}>
+                      <Pressable style={[styles.button, styles.editButton]} onPress={handleEdit}>
+                        <ThemedText style={styles.editButtonText}>✏️ Editar Factores</ThemedText>
+                      </Pressable>
+                    </ProtectedAction>
                   )}
                 </View>
               </>

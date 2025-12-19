@@ -382,3 +382,11 @@
 - [ ] Implementar control en pantalla de usuarios (solo administradores)
 - [ ] Mostrar indicador de rol actual en el header/dashboard
 - [x] Agregar mensajes informativos cuando el usuario no tiene permisos
+
+
+## Control de Acceso en Pantallas de Gestión (Nueva solicitud)
+- [x] Implementar control de acceso en pantalla de factores de emisión
+- [x] Implementar control de acceso en pantalla de metas
+- [x] Implementar control de acceso en pantalla de usuarios
+- [ ] Implementar control de acceso en pantalla de organizaciones
+- [ ] Implementar control de acceso en pantalla de años de inventario
