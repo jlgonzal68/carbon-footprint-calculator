@@ -209,3 +209,23 @@
 - [ ] Implementar exportación de reportes a PDF
 - [x] Optimizar diseño para pantallas de escritorio
 - [ ] Agregar gestión de factores de emisión (editar, actualizar)
+
+
+## Formularios de Ingreso de Datos (Nueva solicitud)
+- [x] Crear formulario completo de ingreso de combustibles (gasolina y diesel)
+- [x] Crear formulario completo de ingreso de energía por campus
+- [x] Crear formulario completo de inventario de aires acondicionados
+- [x] Crear formulario completo de inventario de extintores
+- [x] Agregar validaciones en todos los formularios
+- [x] Mostrar cálculo de emisiones en tiempo real
+- [x] Implementar listado de registros con opciones de editar/eliminar
+
+
+## Formularios de Ingreso de Datos (Nueva solicitud)
+- [x] Crear formulario completo de ingreso de combustibles (gasolina y diesel)
+- [x] Crear formulario completo de ingreso de energía por campus
+- [x] Crear formulario completo de inventario de aires acondicionados
+- [x] Crear formulario completo de inventario de extintores
+- [x] Agregar validaciones en todos los formularios
+- [x] Mostrar cálculo de emisiones en tiempo real
+- [x] Implementar listado de registros con opciones de editar/eliminar

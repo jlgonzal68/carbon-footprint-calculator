@@ -32,6 +32,38 @@ const categories: DataCategory[] = [
     route: '/anos-inventario',
     color: '#1976D2',
   },
+  {
+    id: 'combustibles',
+    title: 'Combustibles',
+    description: 'Gasolina y diesel consumidos',
+    icon: 'paperplane.fill',
+    route: '/data/combustibles',
+    color: '#F57C00',
+  },
+  {
+    id: 'energia',
+    title: 'Energía Eléctrica',
+    description: 'Consumo de energía por campus',
+    icon: 'paperplane.fill',
+    route: '/data/energia',
+    color: '#FBC02D',
+  },
+  {
+    id: 'aires',
+    title: 'Aires Acondicionados',
+    description: 'Inventario de equipos de climatización',
+    icon: 'paperplane.fill',
+    route: '/data/aires-acondicionados',
+    color: '#0288D1',
+  },
+  {
+    id: 'extintores',
+    title: 'Extintores',
+    description: 'Inventario de extintores',
+    icon: 'paperplane.fill',
+    route: '/data/extintores',
+    color: '#D32F2F',
+  },
 ];
 
 export default function DataScreen() {
@@ -100,12 +132,9 @@ export default function DataScreen() {
             📋 Próximamente
           </ThemedText>
           <ThemedText style={styles.infoText}>
-            • Combustibles (Gasolina y Diesel){'\n'}
-            • Energía Eléctrica por Campus{'\n'}
-            • Aires Acondicionados{'\n'}
-            • Extintores{'\n'}
-            • Residuos Sólidos{'\n'}
-            • Agua Potable y Residual
+            • Residuos Sólidos (clasificados por tipo){'\n'}
+            • Agua Potable y Residual por campus{'\n'}
+            • Gestión de Factores de Emisión
           </ThemedText>
         </ThemedView>
       </ThemedView>
