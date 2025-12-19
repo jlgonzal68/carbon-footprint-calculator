@@ -268,3 +268,18 @@
 - [x] Implementar carga de datos en tiempo real desde la base de datos
 - [x] Agregar indicadores de totales y comparativas
 - [x] Mejorar diseño responsivo del dashboard
+
+
+## Módulo de Reportes con Exportación PDF (Nueva solicitud)
+- [x] Instalar dependencias para generación de PDF (expo-print y expo-sharing)
+- [x] Crear pantalla de reportes con selector de año
+- [x] Implementar resumen ejecutivo con totales y comparativas
+- [x] Agregar sección de metodología según ISO 14064-1:2018
+- [x] Crear desglose detallado por categoría (combustibles, energía, etc.)
+- [x] Agregar desglose por campus con totales
+- [x] Incluir tabla de factores de emisión utilizados
+- [x] Implementar función de generación de PDF
+- [x] Agregar encabezados institucionales y pie de página
+- [x] Incluir gráficos en el PDF (alcances y campus)
+- [x] Agregar numeración de páginas
+- [x] Implementar botón de descarga/compartir PDF
