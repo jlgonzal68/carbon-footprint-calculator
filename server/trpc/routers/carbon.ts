@@ -1774,6 +1774,122 @@ export const carbonRouter = router({
       }
     }),
 
+  // ============ GESTIÓN DE USUARIOS Y ROLES ============
+
+  getRoles: protectedProcedure.query(async () => {
+    const db = await getConnection();
+    try {
+      const [roles] = await db.execute('SELECT * FROM roles ORDER BY id');
+      await db.end();
+      return roles;
+    } catch (error) {
+      await db.end();
+      throw error;
+    }
+  }),
+
+  getUsuariosOrganizacion: protectedProcedure
+    .input(z.object({ organizacion_id: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [usuarios] = await db.execute(
+          `SELECT uo.*, r.nombre as rol_nombre, r.descripcion as rol_descripcion
+           FROM usuarios_organizacion uo
+           JOIN roles r ON uo.rol_id = r.id
+           WHERE uo.organizacion_id = ?
+           ORDER BY uo.created_at DESC`,
+          [input.organizacion_id]
+        );
+        await db.end();
+        return usuarios;
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  getRolUsuario: protectedProcedure
+    .input(z.object({ user_id: z.string(), organizacion_id: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [result] = await db.execute(
+          `SELECT uo.*, r.nombre as rol_nombre, r.permisos
+           FROM usuarios_organizacion uo
+           JOIN roles r ON uo.rol_id = r.id
+           WHERE uo.user_id = ? AND uo.organizacion_id = ?`,
+          [input.user_id, input.organizacion_id]
+        );
+        await db.end();
+        const usuarios = result as any[];
+        return usuarios.length > 0 ? usuarios[0] : null;
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  asignarRolUsuario: protectedProcedure
+    .input(z.object({
+      user_id: z.string(),
+      organizacion_id: z.number(),
+      rol_id: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        await db.execute(
+          `INSERT INTO usuarios_organizacion (user_id, organizacion_id, rol_id)
+           VALUES (?, ?, ?)
+           ON DUPLICATE KEY UPDATE rol_id = ?`,
+          [input.user_id, input.organizacion_id, input.rol_id, input.rol_id]
+        );
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  cambiarRolUsuario: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      rol_id: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        await db.execute(
+          'UPDATE usuarios_organizacion SET rol_id = ? WHERE id = ?',
+          [input.rol_id, input.id]
+        );
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  eliminarUsuarioOrganizacion: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        await db.execute(
+          'DELETE FROM usuarios_organizacion WHERE id = ?',
+          [input.id]
+        );
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
 });
 
 // ============ FUNCIONES AUXILIARES ============

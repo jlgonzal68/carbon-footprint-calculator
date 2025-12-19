@@ -342,3 +342,25 @@
 - [x] Mostrar contador de alertas no leídas
 - [x] Implementar botón para verificar metas automáticamente
 - [x] Agregar enlace a pantalla de metas desde el panel
+
+
+## Sistema de Usuarios y Roles (Nueva solicitud)
+- [x] Crear tabla de roles en base de datos
+- [x] Crear tabla de usuarios_organizacion para relacionar usuarios con organizaciones y roles
+- [x] Definir tres roles: administrador, editor, visualizador
+- [x] Crear endpoints de API para gestión de usuarios
+- [x] Crear endpoint para asignar roles a usuarios
+- [x] Crear endpoint para obtener usuarios de una organización
+- [x] Crear endpoint para eliminar usuarios de una organización
+- [x] Crear pantalla de gestión de usuarios
+- [x] Implementar formulario para invitar usuarios
+- [x] Mostrar lista de usuarios con sus roles
+- [x] Implementar funcionalidad para cambiar roles
+- [x] Implementar funcionalidad para eliminar usuarios
+- [ ] Crear middleware de verificación de permisos
+- [ ] Implementar control de acceso en formularios de ingreso de datos
+- [ ] Implementar control de acceso en gestión de factores de emisión
+- [ ] Implementar control de acceso en gestión de metas
+- [ ] Implementar control de acceso en gestión de organizaciones
+- [ ] Mostrar indicador de rol actual del usuario en la interfaz
+- [x] Agregar enlace desde Configuración

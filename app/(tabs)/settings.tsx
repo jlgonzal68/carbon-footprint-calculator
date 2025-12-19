@@ -106,7 +106,7 @@ export default function SettingsScreen() {
             </Pressable>
 
             <Pressable
-              style={[styles.menuItem, { borderBottomWidth: 0 }]}
+              style={[styles.menuItem, { borderBottomColor: colors.border }]}
               onPress={() => navigateTo('/metas')}
             >
               <ThemedText style={styles.menuIcon}>🎯</ThemedText>
@@ -114,6 +114,20 @@ export default function SettingsScreen() {
                 <ThemedText style={styles.menuTitle}>Metas de Reducción</ThemedText>
                 <ThemedText style={{ color: colors.textSecondary, fontSize: 13 }}>
                   Definir y monitorear metas de reducción
+                </ThemedText>
+              </View>
+              <ThemedText style={{ color: colors.textSecondary, fontSize: 20 }}>›</ThemedText>
+            </Pressable>
+
+            <Pressable
+              style={[styles.menuItem, { borderBottomWidth: 0 }]}
+              onPress={() => navigateTo('/usuarios')}
+            >
+              <ThemedText style={styles.menuIcon}>👥</ThemedText>
+              <View style={styles.menuContent}>
+                <ThemedText style={styles.menuTitle}>Gestión de Usuarios</ThemedText>
+                <ThemedText style={{ color: colors.textSecondary, fontSize: 13 }}>
+                  Administrar usuarios y permisos
                 </ThemedText>
               </View>
               <ThemedText style={{ color: colors.textSecondary, fontSize: 20 }}>›</ThemedText>
