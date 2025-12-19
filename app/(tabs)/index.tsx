@@ -37,6 +37,23 @@ export default function DashboardScreen() {
     { enabled: !!selectedAno }
   );
 
+  const { data: alertas, refetch: refetchAlertas } = trpc.carbon.getAlertas.useQuery(
+    { ano_inventario_id: selectedAno!, solo_no_leidas: true },
+    { enabled: !!selectedAno }
+  );
+
+  const marcarAlertaLeidaMutation = trpc.carbon.marcarAlertaLeida.useMutation({
+    onSuccess: () => {
+      refetchAlertas();
+    },
+  });
+
+  const verificarMetasMutation = trpc.carbon.verificarMetas.useMutation({
+    onSuccess: () => {
+      refetchAlertas();
+    },
+  });
+
   // Preparar datos para gráfico de alcances
   const datosAlcance = resumen ? [
     { name: 'Alcance 1', value: parseFloat(resumen.alcance_1_total || '0'), color: COLORS_ALCANCE[0] },
@@ -148,6 +165,105 @@ export default function DashboardScreen() {
             </View>
           )}
         </ThemedView>
+
+        {/* Panel de Alertas */}
+        {selectedAno && alertas && (alertas as any[]).length > 0 && (
+          <ThemedView style={styles.alertasPanel}>
+            <View style={styles.alertasHeader}>
+              <View style={styles.alertasHeaderLeft}>
+                <ThemedText type="subtitle" style={styles.alertasTitle}>
+                  ⚠️ Alertas Activas
+                </ThemedText>
+                <View style={styles.alertasBadge}>
+                  <ThemedText style={styles.alertasBadgeText}>
+                    {(alertas as any[]).length}
+                  </ThemedText>
+                </View>
+              </View>
+              <Pressable
+                style={styles.verificarButton}
+                onPress={() => verificarMetasMutation.mutate({ ano_inventario_id: selectedAno })}
+                disabled={verificarMetasMutation.isPending}
+              >
+                {verificarMetasMutation.isPending ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <ThemedText style={styles.verificarButtonText}>🔄 Verificar</ThemedText>
+                )}
+              </Pressable>
+            </View>
+
+            <View style={styles.alertasList}>
+              {(alertas as any[]).slice(0, 3).map((alerta: any) => {
+                const nivelColors: Record<string, string> = {
+                  error: '#F44336',
+                  warning: '#FF9800',
+                  info: '#2196F3',
+                  success: '#4CAF50',
+                };
+                const nivelIcons: Record<string, string> = {
+                  error: '❌',
+                  warning: '⚠️',
+                  info: 'ℹ️',
+                  success: '✅',
+                };
+                const color = nivelColors[alerta.nivel] || '#757575';
+                const icon = nivelIcons[alerta.nivel] || '🔔';
+
+                return (
+                  <Pressable
+                    key={alerta.id}
+                    style={[styles.alertaCard, { borderLeftColor: color }]}
+                    onPress={() => marcarAlertaLeidaMutation.mutate({ id: alerta.id })}
+                  >
+                    <View style={styles.alertaContent}>
+                      <ThemedText style={styles.alertaIcon}>{icon}</ThemedText>
+                      <View style={styles.alertaTexto}>
+                        <ThemedText style={styles.alertaTipo}>
+                          {alerta.tipo_alerta.replace(/_/g, ' ').toUpperCase()}
+                        </ThemedText>
+                        <ThemedText style={styles.alertaMensaje}>
+                          {alerta.mensaje}
+                        </ThemedText>
+                        {alerta.categoria && (
+                          <ThemedText style={styles.alertaCategoria}>
+                            Categoría: {alerta.categoria}
+                          </ThemedText>
+                        )}
+                      </View>
+                    </View>
+                    <Pressable
+                      onPress={() => marcarAlertaLeidaMutation.mutate({ id: alerta.id })}
+                      style={styles.marcarLeidaButton}
+                    >
+                      <ThemedText style={styles.marcarLeidaText}>✓</ThemedText>
+                    </Pressable>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {(alertas as any[]).length > 3 && (
+              <Pressable
+                style={styles.verTodasButton}
+                onPress={() => router.push('/metas' as any)}
+              >
+                <ThemedText style={styles.verTodasText}>
+                  Ver todas las alertas ({(alertas as any[]).length})
+                </ThemedText>
+              </Pressable>
+            )}
+
+            <Pressable
+              style={styles.gestionarMetasButton}
+              onPress={() => router.push('/metas' as any)}
+            >
+              <ThemedText style={styles.gestionarMetasText}>
+                🎯 Gestionar Metas
+              </ThemedText>
+            </Pressable>
+          </ThemedView>
+        )}
 
         {selectedAno && (
           <>
@@ -423,5 +539,123 @@ const styles = StyleSheet.create({
   tableCellValue: {
     fontSize: 14,
     color: '#424242',
+  },
+  alertasPanel: {
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#FFF3E0',
+    borderWidth: 2,
+    borderColor: '#FF9800',
+    gap: 12,
+  },
+  alertasHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  alertasHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  alertasTitle: {
+    color: '#E65100',
+  },
+  alertasBadge: {
+    backgroundColor: '#F44336',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    minWidth: 24,
+    alignItems: 'center',
+  },
+  alertasBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  verificarButton: {
+    backgroundColor: '#2E7D32',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  verificarButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  alertasList: {
+    gap: 8,
+  },
+  alertaCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    padding: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  alertaContent: {
+    flexDirection: 'row',
+    gap: 12,
+    flex: 1,
+  },
+  alertaIcon: {
+    fontSize: 24,
+  },
+  alertaTexto: {
+    flex: 1,
+    gap: 4,
+  },
+  alertaTipo: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#424242',
+  },
+  alertaMensaje: {
+    fontSize: 14,
+    color: '#212121',
+  },
+  alertaCategoria: {
+    fontSize: 12,
+    color: '#757575',
+    fontStyle: 'italic',
+  },
+  marcarLeidaButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 16,
+    width: 32,
+    height: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  marcarLeidaText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  verTodasButton: {
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  verTodasText: {
+    color: '#E65100',
+    fontSize: 14,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  gestionarMetasButton: {
+    backgroundColor: '#2E7D32',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  gestionarMetasText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

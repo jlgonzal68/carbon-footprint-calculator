@@ -332,3 +332,13 @@
 - [ ] Crear panel de alertas en Dashboard
 - [x] Implementar lógica de verificación de metas
 - [x] Agregar enlace desde Configuración
+
+
+## Panel de Alertas en Dashboard (Nueva solicitud)
+- [x] Agregar componente de panel de alertas en Dashboard
+- [x] Mostrar alertas activas con indicadores de prioridad
+- [x] Implementar colores según nivel de alerta (info, warning, error, success)
+- [x] Agregar funcionalidad para marcar alertas como leídas
+- [x] Mostrar contador de alertas no leídas
+- [x] Implementar botón para verificar metas automáticamente
+- [x] Agregar enlace a pantalla de metas desde el panel
