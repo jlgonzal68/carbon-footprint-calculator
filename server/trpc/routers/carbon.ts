@@ -1890,6 +1890,64 @@ export const carbonRouter = router({
       }
     }),
 
+  getDatosExportacion: protectedProcedure
+    .input(z.object({
+      ano_inventario_id: z.number(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [anoInfo] = await db.execute(
+          `SELECT ai.ano, ai.ano_base, o.nombre as organizacion_nombre
+           FROM ano_inventario ai
+           JOIN organizacion o ON ai.organizacion_id = o.id
+           WHERE ai.id = ?`,
+          [input.ano_inventario_id]
+        );
+        const [combustibles] = await db.execute(
+          `SELECT * FROM consumo_combustible WHERE ano_inventario_id = ? ORDER BY fecha_registro DESC`,
+          [input.ano_inventario_id]
+        );
+        const [energia] = await db.execute(
+          `SELECT * FROM consumo_energia WHERE ano_inventario_id = ? ORDER BY campus_id, fecha_registro DESC`,
+          [input.ano_inventario_id]
+        );
+        const [airesAcond] = await db.execute(
+          `SELECT * FROM inventario_aires_acond WHERE ano_inventario_id = ? ORDER BY campus_id, tipo_equipo`,
+          [input.ano_inventario_id]
+        );
+        const [extintores] = await db.execute(
+          `SELECT * FROM inventario_extintores WHERE ano_inventario_id = ? ORDER BY campus_id, tipo_extintor`,
+          [input.ano_inventario_id]
+        );
+        const [residuos] = await db.execute(
+          `SELECT * FROM residuos_solidos WHERE ano_inventario_id = ? ORDER BY campus_id, tipo_residuo, fecha_registro DESC`,
+          [input.ano_inventario_id]
+        );
+        const [agua] = await db.execute(
+          `SELECT * FROM consumo_agua WHERE ano_inventario_id = ? ORDER BY campus_id, fecha_registro DESC`,
+          [input.ano_inventario_id]
+        );
+        const [resumen] = await db.execute(
+          `SELECT * FROM resumen_huella_carbono WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+        await db.end();
+        return {
+          anoInfo: (anoInfo as any[])[0] || {},
+          combustibles: combustibles as any[],
+          energia: energia as any[],
+          airesAcond: airesAcond as any[],
+          extintores: extintores as any[],
+          residuos: residuos as any[],
+          agua: agua as any[],
+          resumen: (resumen as any[])[0] || {},
+        };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
 });
 
 // ============ FUNCIONES AUXILIARES ============

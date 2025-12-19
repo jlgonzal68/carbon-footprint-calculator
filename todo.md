@@ -396,3 +396,18 @@
 - [x] Mostrar rol con colores diferenciados (Administrador: azul, Editor: verde, Visualizador: gris)
 - [x] Integrar hook usePermissions para obtener información del rol
 - [x] Diseñar badge con sombra y estilo destacado
+
+
+## Exportación de Datos a Excel (Nueva solicitud)
+- [x] Crear endpoints de API para obtener todos los datos de un año de inventario
+- [x] Implementar generación de archivo Excel con múltiples hojas
+- [x] Crear hoja de Excel para combustibles con columnas detalladas
+- [x] Crear hoja de Excel para energía por campus
+- [x] Crear hoja de Excel para inventario de aires acondicionados
+- [x] Crear hoja de Excel para inventario de extintores
+- [x] Crear hoja de Excel para residuos sólidos
+- [x] Crear hoja de Excel para consumo de agua
+- [x] Crear hoja de resumen con totales por alcance y categoría
+- [x] Implementar pantalla de exportación con selector de año
+- [x] Agregar funcionalidad de descarga del archivo Excel generado
+- [x] Integrar opción de exportación en la pantalla de Configuración

@@ -125,6 +125,19 @@ export default function SettingsScreen() {
             >
               <ThemedText style={styles.menuIcon}>👥</ThemedText>
               <View style={styles.menuContent}>
+            <Pressable
+              style={[styles.menuItem, { borderBottomColor: colors.border }]}
+              onPress={() => navigateTo('/exportacion')}
+            >
+              <ThemedText style={styles.menuIcon}>📊</ThemedText>
+              <View style={styles.menuContent}>
+                <ThemedText style={styles.menuTitle}>Exportar Datos</ThemedText>
+                <ThemedText style={{ color: colors.textSecondary, fontSize: 13 }}>
+                  Exportar datos a Excel para auditorías
+                </ThemedText>
+              </View>
+              <ThemedText style={{ color: colors.textSecondary, fontSize: 20 }}>›</ThemedText>
+            </Pressable>
                 <ThemedText style={styles.menuTitle}>Gestión de Usuarios</ThemedText>
                 <ThemedText style={{ color: colors.textSecondary, fontSize: 13 }}>
                   Administrar usuarios y permisos
