@@ -1,363 +1,427 @@
-import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useState } from 'react';
+import { View, Text, Pressable, StyleSheet, ScrollView, Dimensions, ActivityIndicator } from 'react-native';
+import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ThemedText } from '@/components/themed-text';
+import { ThemedView } from '@/components/themed-view';
+import { trpc } from '@/lib/trpc';
+import { useAuth } from '@/hooks/use-auth';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
-import { ThemedText } from "@/components/themed-text";
-import { ThemedView } from "@/components/themed-view";
-import { IconSymbol } from "@/components/ui/icon-symbol";
-import { Colors } from "@/constants/theme";
-import { useAuth } from "@/hooks/use-auth";
-import { useColorScheme } from "@/hooks/use-color-scheme";
-import { trpc } from "@/lib/trpc";
+const COLORS_ALCANCE = ['#2E7D32', '#66BB6A', '#A5D6A7'];
+const COLORS_CAMPUS = ['#D32F2F', '#F57C00', '#FBC02D', '#7B1FA2', '#0288D1'];
+
+const CAMPUS_NAMES: Record<number, string> = {
+  1: 'Robledo',
+  2: 'Fraternidad',
+  3: 'Floresta',
+  4: 'Prado',
+  5: 'Castilla',
+};
 
 export default function DashboardScreen() {
-  const { user, isAuthenticated, loading: authLoading } = useAuth();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? "light"];
+  const { user } = useAuth();
+  const [selectedAno, setSelectedAno] = useState<number | null>(null);
 
-  const [selectedOrgId, setSelectedOrgId] = useState<number | null>(null);
-  const [selectedYearId, setSelectedYearId] = useState<number | null>(null);
+  const { data: organizaciones } = trpc.carbon.getOrganizaciones.useQuery(undefined, { enabled: !!user });
+  const organizacion = organizaciones && Array.isArray(organizaciones) && organizaciones.length > 0 ? organizaciones[0] : null;
 
-  // Queries
-  const { data: organizaciones, isLoading: loadingOrgs } = trpc.carbon.getOrganizaciones.useQuery(
-    undefined,
-    { enabled: isAuthenticated }
+  const { data: anosInventario } = trpc.carbon.getAnosInventario.useQuery(
+    { organizacion_id: (organizacion as any)?.id },
+    { enabled: !!(organizacion as any)?.id }
   );
 
-  const { data: anosInventario, isLoading: loadingYears } = trpc.carbon.getAnosInventario.useQuery(
-    { organizacion_id: selectedOrgId! },
-    { enabled: !!selectedOrgId }
+  const { data: resumen, isLoading } = trpc.carbon.getResumenHuellaCarbono.useQuery(
+    { ano_inventario_id: selectedAno! },
+    { enabled: !!selectedAno }
   );
 
-  const { data: resumen, isLoading: loadingResumen } = trpc.carbon.getResumenHuellaCarbono.useQuery(
-    { ano_inventario_id: selectedYearId! },
-    { enabled: !!selectedYearId }
-  );
+  // Preparar datos para gráfico de alcances
+  const datosAlcance = resumen ? [
+    { name: 'Alcance 1', value: parseFloat(resumen.alcance_1_total || '0'), color: COLORS_ALCANCE[0] },
+    { name: 'Alcance 2', value: parseFloat(resumen.alcance_2_total || '0'), color: COLORS_ALCANCE[1] },
+    { name: 'Alcance 3', value: parseFloat(resumen.alcance_3_total || '0'), color: COLORS_ALCANCE[2] },
+  ].filter(item => item.value > 0) : [];
 
-  // Auto-select first organization and year
-  useEffect(() => {
-    if (organizaciones && Array.isArray(organizaciones) && organizaciones.length > 0 && !selectedOrgId) {
-      setSelectedOrgId((organizaciones as any)[0].id);
-    }
-  }, [organizaciones, selectedOrgId]);
+  // Preparar datos para gráfico de campus
+  const datosCampus = resumen?.por_campus ? Object.entries(resumen.por_campus).map(([campusId, total]: [string, any], index) => ({
+    name: CAMPUS_NAMES[parseInt(campusId)] || `Campus ${campusId}`,
+    total: parseFloat(total || '0'),
+    color: COLORS_CAMPUS[index % COLORS_CAMPUS.length],
+  })).filter(item => item.total > 0) : [];
 
-  useEffect(() => {
-    if (anosInventario && (anosInventario as any[]).length > 0 && !selectedYearId) {
-      setSelectedYearId((anosInventario as any)[0].id);
-    }
-  }, [anosInventario, selectedYearId]);
+  // Preparar datos para tabla de categorías
+  const datosCategoria = resumen ? [
+    { categoria: '⛽ Combustibles', emision: parseFloat(resumen.combustibles_total || '0') },
+    { categoria: '⚡ Energía', emision: parseFloat(resumen.energia_total || '0') },
+    { categoria: '❄️ Aires Acond.', emision: parseFloat(resumen.aires_total || '0') },
+    { categoria: '🧯 Extintores', emision: parseFloat(resumen.extintores_total || '0') },
+    { categoria: '♻️ Residuos', emision: parseFloat(resumen.residuos_total || '0') },
+    { categoria: '💧 Agua', emision: parseFloat(resumen.agua_total || '0') },
+  ].filter(item => item.emision > 0) : [];
 
-  if (authLoading) {
+  const totalEmisiones = resumen ? parseFloat(resumen.total_co2e || '0') : 0;
+
+  if (!user) {
     return (
-      <ThemedView style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={colors.tint} />
-      </ThemedView>
+      <ScrollView
+        style={[styles.container, { paddingTop: insets.top }]}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+      >
+        <ThemedView style={styles.content}>
+          <ThemedText type="title" style={styles.title}>
+            🌱 Dashboard
+          </ThemedText>
+          <ThemedText style={styles.noAuth}>
+            Inicia sesión para ver tu dashboard de huella de carbono
+          </ThemedText>
+        </ThemedView>
+      </ScrollView>
     );
   }
 
-  if (!isAuthenticated) {
+  if (!organizacion) {
     return (
-      <ThemedView style={[styles.container, { paddingTop: insets.top + 16 }]}>
-        <View style={styles.emptyState}>
-          <IconSymbol name="leaf.fill" size={64} color={colors.tint} />
-          <ThemedText type="title" style={styles.emptyTitle}>
-            Calculadora de Huella de Carbono
+      <ScrollView
+        style={[styles.container, { paddingTop: insets.top }]}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+      >
+        <ThemedView style={styles.content}>
+          <ThemedText type="title" style={styles.title}>
+            🌱 Dashboard
           </ThemedText>
-          <ThemedText style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Inicia sesión para comenzar a calcular la huella de carbono de tu institución educativa
+          <ThemedText style={styles.noOrg}>
+            No tienes una organización creada. Ve a Configuración para crear una.
           </ThemedText>
-          <Pressable
-            style={[styles.button, { backgroundColor: colors.tint }]}
-            onPress={() => router.push("/modal")}
-          >
-            <ThemedText style={styles.buttonText}>Iniciar Sesión</ThemedText>
+          <Pressable style={styles.actionButton} onPress={() => router.push('/organizacion' as any)}>
+            <ThemedText style={styles.actionButtonText}>Crear Organización</ThemedText>
           </Pressable>
-        </View>
-      </ThemedView>
-    );
-  }
-
-  if (loadingOrgs) {
-    return (
-      <ThemedView style={styles.centerContainer}>
-        <ActivityIndicator size="large" color={colors.tint} />
-        <ThemedText style={{ marginTop: 16, color: colors.textSecondary }}>
-          Cargando datos...
-        </ThemedText>
-      </ThemedView>
-    );
-  }
-
-  if (!organizaciones || !Array.isArray(organizaciones) || organizaciones.length === 0) {
-    return (
-      <ThemedView style={[styles.container, { paddingTop: insets.top + 16 }]}>
-        <View style={styles.emptyState}>
-          <IconSymbol name="building.2.fill" size={64} color={colors.tint} />
-          <ThemedText type="title" style={styles.emptyTitle}>
-            No hay organizaciones
-          </ThemedText>
-          <ThemedText style={[styles.emptyText, { color: colors.textSecondary }]}>
-            Crea tu primera organización para comenzar a calcular la huella de carbono
-          </ThemedText>
-          <Pressable
-            style={[styles.button, { backgroundColor: colors.tint }]}
-            onPress={() => router.push("/(tabs)/settings")}
-          >
-            <ThemedText style={styles.buttonText}>Crear Organización</ThemedText>
-          </Pressable>
-        </View>
-      </ThemedView>
+        </ThemedView>
+      </ScrollView>
     );
   }
 
   return (
     <ScrollView
-      style={[styles.scrollView, { backgroundColor: colors.backgroundSecondary }]}
-      contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }}
+      style={[styles.container, { paddingTop: insets.top }]}
+      contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
     >
-      <ThemedView style={styles.header}>
-        <ThemedText type="title">Dashboard</ThemedText>
-        <ThemedText style={{ color: colors.textSecondary, marginTop: 4 }}>
-          Resumen de Huella de Carbono
+      <ThemedView style={styles.content}>
+        <ThemedText type="title" style={styles.title}>
+          🌱 Dashboard de Huella de Carbono
         </ThemedText>
-      </ThemedView>
 
-      {/* Selector de Año */}
-      {anosInventario && (anosInventario as any[]).length > 0 && (
-        <ThemedView style={[styles.card, { backgroundColor: colors.card }]}>
-          <ThemedText type="subtitle" style={{ marginBottom: 12 }}>
+        <ThemedView style={styles.card}>
+          <ThemedText type="subtitle" style={styles.cardTitle}>
             Año de Inventario
           </ThemedText>
-          <View style={styles.yearSelector}>
-            {(anosInventario as any[]).map((ano: any) => (
+          <View style={styles.anoSelector}>
+            {(anosInventario as any[])?.map((ano: any) => (
               <Pressable
                 key={ano.id}
                 style={[
-                  styles.yearButton,
-                  {
-                    backgroundColor:
-                      selectedYearId === ano.id ? colors.tint : colors.backgroundSecondary,
-                    borderColor: colors.border,
-                  },
+                  styles.anoButton,
+                  selectedAno === ano.id && styles.anoButtonSelected,
                 ]}
-                onPress={() => setSelectedYearId(ano.id)}
+                onPress={() => setSelectedAno(ano.id)}
               >
-                <ThemedText
-                  style={{
-                    color: selectedYearId === ano.id ? "#FFFFFF" : colors.text,
-                    fontWeight: selectedYearId === ano.id ? "600" : "400",
-                  }}
+                <Text
+                  style={[
+                    styles.anoText,
+                    selectedAno === ano.id && styles.anoTextSelected,
+                  ]}
                 >
                   {ano.ano}
-                </ThemedText>
+                </Text>
               </Pressable>
             ))}
           </View>
-        </ThemedView>
-      )}
-
-      {/* Resumen de Emisiones */}
-      {loadingResumen ? (
-        <ThemedView style={[styles.card, { backgroundColor: colors.card }]}>
-          <ActivityIndicator size="large" color={colors.tint} />
-        </ThemedView>
-      ) : resumen ? (
-        <>
-          <ThemedView style={[styles.card, { backgroundColor: colors.card }]}>
-            <View style={styles.totalCard}>
-              <IconSymbol name="leaf.fill" size={48} color={colors.success} />
-              <View style={{ flex: 1, marginLeft: 16 }}>
-                <ThemedText style={{ color: colors.textSecondary }}>Total CO₂e</ThemedText>
-                <ThemedText type="title" style={{ color: colors.success }}>
-                  {((resumen as any).total_co2e / 1000).toFixed(2)} t
-                </ThemedText>
-                <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
-                  Toneladas de CO₂ equivalente
-                </ThemedText>
-              </View>
+          {(!anosInventario || (anosInventario as any[]).length === 0) && (
+            <View style={styles.noDataContainer}>
+              <ThemedText style={styles.noData}>
+                No hay años de inventario creados
+              </ThemedText>
+              <Pressable style={styles.actionButton} onPress={() => router.push('/anos-inventario' as any)}>
+                <ThemedText style={styles.actionButtonText}>Crear Año de Inventario</ThemedText>
+              </Pressable>
             </View>
-          </ThemedView>
-
-          <ThemedView style={[styles.card, { backgroundColor: colors.card }]}>
-            <ThemedText type="subtitle" style={{ marginBottom: 16 }}>
-              Emisiones por Alcance
-            </ThemedText>
-
-            <View style={styles.alcanceRow}>
-              <View style={styles.alcanceItem}>
-                <View style={[styles.alcanceBadge, { backgroundColor: colors.error + "20" }]}>
-                  <IconSymbol name="flame.fill" size={24} color={colors.error} />
-                </View>
-                <ThemedText style={[styles.alcanceLabel, { color: colors.textSecondary }]}>
-                  Alcance 1
-                </ThemedText>
-                <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>
-                  {((resumen as any).alcance_1 / 1000).toFixed(2)} t
-                </ThemedText>
-                <ThemedText style={[styles.alcanceDesc, { color: colors.textSecondary }]}>
-                  Emisiones directas
-                </ThemedText>
-              </View>
-
-              <View style={styles.alcanceItem}>
-                <View style={[styles.alcanceBadge, { backgroundColor: colors.warning + "20" }]}>
-                  <IconSymbol name="bolt.fill" size={24} color={colors.warning} />
-                </View>
-                <ThemedText style={[styles.alcanceLabel, { color: colors.textSecondary }]}>
-                  Alcance 2
-                </ThemedText>
-                <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>
-                  {((resumen as any).alcance_2 / 1000).toFixed(2)} t
-                </ThemedText>
-                <ThemedText style={[styles.alcanceDesc, { color: colors.textSecondary }]}>
-                  Energía eléctrica
-                </ThemedText>
-              </View>
-
-              <View style={styles.alcanceItem}>
-                <View style={[styles.alcanceBadge, { backgroundColor: colors.secondary + "20" }]}>
-                  <IconSymbol name="drop.fill" size={24} color={colors.secondary} />
-                </View>
-                <ThemedText style={[styles.alcanceLabel, { color: colors.textSecondary }]}>
-                  Alcance 3
-                </ThemedText>
-                <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>
-                  {((resumen as any).alcance_3 / 1000).toFixed(2)} t
-                </ThemedText>
-                <ThemedText style={[styles.alcanceDesc, { color: colors.textSecondary }]}>
-                  Otras emisiones
-                </ThemedText>
-              </View>
-            </View>
-          </ThemedView>
-
-          <Pressable
-            style={[styles.button, { backgroundColor: colors.tint, marginHorizontal: 16 }]}
-            onPress={() => router.push("/(tabs)/data")}
-          >
-            <ThemedText style={styles.buttonText}>Ingresar Datos</ThemedText>
-          </Pressable>
-        </>
-      ) : (
-        <ThemedView style={[styles.card, { backgroundColor: colors.card }]}>
-          <View style={styles.emptyState}>
-            <IconSymbol name="doc.text.fill" size={48} color={colors.textSecondary} />
-            <ThemedText style={{ marginTop: 12, color: colors.textSecondary }}>
-              No hay datos disponibles para este año
-            </ThemedText>
-          </View>
+          )}
         </ThemedView>
-      )}
+
+        {selectedAno && (
+          <>
+            {isLoading ? (
+              <ThemedView style={styles.card}>
+                <ActivityIndicator size="large" color="#2E7D32" />
+                <ThemedText style={styles.loadingText}>Cargando datos...</ThemedText>
+              </ThemedView>
+            ) : (
+              <>
+                {/* Total de Emisiones */}
+                <ThemedView style={styles.totalCard}>
+                  <ThemedText style={styles.totalLabel}>Total de Emisiones</ThemedText>
+                  <ThemedText style={styles.totalValue}>
+                    {totalEmisiones.toLocaleString('es-ES', { maximumFractionDigits: 2 })}
+                  </ThemedText>
+                  <ThemedText style={styles.totalUnit}>kg CO₂e</ThemedText>
+                </ThemedView>
+
+                {/* Gráfico de Emisiones por Alcance */}
+                {datosAlcance.length > 0 && (
+                  <ThemedView style={styles.card}>
+                    <ThemedText type="subtitle" style={styles.cardTitle}>
+                      Emisiones por Alcance
+                    </ThemedText>
+                    <View style={styles.chartContainer}>
+                      <PieChart width={Dimensions.get('window').width - 64} height={250}>
+                        <Pie
+                          data={datosAlcance}
+                          cx="50%"
+                          cy="50%"
+                          labelLine={false}
+                          label={(entry) => `${entry.name}: ${entry.value.toFixed(0)} kg`}
+                          outerRadius={80}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          {datosAlcance.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </View>
+                    <View style={styles.legendContainer}>
+                      {datosAlcance.map((item, index) => (
+                        <View key={index} style={styles.legendItem}>
+                          <View style={[styles.legendColor, { backgroundColor: item.color }]} />
+                          <ThemedText style={styles.legendText}>
+                            {item.name}: {item.value.toLocaleString('es-ES', { maximumFractionDigits: 2 })} kg CO₂e
+                          </ThemedText>
+                        </View>
+                      ))}
+                    </View>
+                  </ThemedView>
+                )}
+
+                {/* Gráfico de Emisiones por Campus */}
+                {datosCampus.length > 0 && (
+                  <ThemedView style={styles.card}>
+                    <ThemedText type="subtitle" style={styles.cardTitle}>
+                      Emisiones por Campus
+                    </ThemedText>
+                    <View style={styles.chartContainer}>
+                      <BarChart
+                        width={Dimensions.get('window').width - 64}
+                        height={250}
+                        data={datosCampus}
+                        margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} />
+                        <YAxis />
+                        <Tooltip />
+                        <Bar dataKey="total" fill="#2E7D32">
+                          {datosCampus.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={entry.color} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </View>
+                  </ThemedView>
+                )}
+
+                {/* Tabla de Emisiones por Categoría */}
+                {datosCategoria.length > 0 && (
+                  <ThemedView style={styles.card}>
+                    <ThemedText type="subtitle" style={styles.cardTitle}>
+                      Emisiones por Categoría
+                    </ThemedText>
+                    <View style={styles.table}>
+                      <View style={styles.tableHeader}>
+                        <ThemedText style={styles.tableHeaderText}>Categoría</ThemedText>
+                        <ThemedText style={styles.tableHeaderText}>Emisión (kg CO₂e)</ThemedText>
+                      </View>
+                      {datosCategoria.map((item, index) => (
+                        <View key={index} style={styles.tableRow}>
+                          <ThemedText style={styles.tableCellCategory}>{item.categoria}</ThemedText>
+                          <ThemedText style={styles.tableCellValue}>
+                            {item.emision.toLocaleString('es-ES', { maximumFractionDigits: 2 })}
+                          </ThemedText>
+                        </View>
+                      ))}
+                    </View>
+                  </ThemedView>
+                )}
+
+                {totalEmisiones === 0 && (
+                  <ThemedView style={styles.card}>
+                    <ThemedText style={styles.noData}>
+                      No hay datos de emisiones para este año. Comienza ingresando datos en la pestaña "Datos".
+                    </ThemedText>
+                  </ThemedView>
+                )}
+              </>
+            )}
+          </>
+        )}
+      </ThemedView>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-  },
   container: {
     flex: 1,
+  },
+  content: {
     padding: 16,
+    gap: 16,
   },
-  centerContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  header: {
-    padding: 16,
-    paddingBottom: 8,
-  },
-  card: {
-    margin: 16,
-    marginTop: 8,
-    padding: 16,
-    borderRadius: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 32,
-  },
-  emptyTitle: {
-    marginTop: 16,
-    textAlign: "center",
-  },
-  emptyText: {
-    marginTop: 8,
-    textAlign: "center",
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  button: {
-    marginTop: 24,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    minWidth: 200,
-  },
-  buttonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  yearSelector: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  yearButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  totalCard: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  alcanceRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 12,
-  },
-  alcanceItem: {
-    flex: 1,
-    alignItems: "center",
-  },
-  alcanceBadge: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: "center",
-    alignItems: "center",
+  title: {
     marginBottom: 8,
   },
-  alcanceLabel: {
-    fontSize: 12,
-    marginBottom: 4,
+  noAuth: {
+    textAlign: 'center',
+    marginVertical: 20,
+    fontSize: 16,
   },
-  alcanceDesc: {
-    fontSize: 11,
-    textAlign: "center",
-    marginTop: 2,
+  noOrg: {
+    textAlign: 'center',
+    marginVertical: 20,
+    fontSize: 16,
+  },
+  card: {
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
+    gap: 12,
+  },
+  cardTitle: {
+    marginBottom: 8,
+  },
+  anoSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  anoButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#E0E0E0',
+  },
+  anoButtonSelected: {
+    backgroundColor: '#2E7D32',
+  },
+  anoText: {
+    fontSize: 16,
+    color: '#424242',
+  },
+  anoTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  noDataContainer: {
+    gap: 12,
+    alignItems: 'center',
+  },
+  noData: {
+    textAlign: 'center',
+    fontStyle: 'italic',
+    color: '#757575',
+    fontSize: 14,
+  },
+  actionButton: {
+    backgroundColor: '#2E7D32',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  actionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadingText: {
+    textAlign: 'center',
+    marginTop: 8,
+    color: '#757575',
+  },
+  totalCard: {
+    padding: 24,
+    borderRadius: 12,
+    backgroundColor: '#2E7D32',
+    alignItems: 'center',
+    gap: 8,
+  },
+  totalLabel: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  totalValue: {
+    fontSize: 48,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+  },
+  totalUnit: {
+    fontSize: 18,
+    color: '#A5D6A7',
+    fontWeight: '600',
+  },
+  chartContainer: {
+    alignItems: 'center',
+    marginVertical: 8,
+  },
+  legendContainer: {
+    gap: 8,
+    marginTop: 12,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  legendColor: {
+    width: 16,
+    height: 16,
+    borderRadius: 4,
+  },
+  legendText: {
+    fontSize: 14,
+    flex: 1,
+  },
+  table: {
+    gap: 8,
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingBottom: 8,
+    borderBottomWidth: 2,
+    borderBottomColor: '#2E7D32',
+  },
+  tableHeaderText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#2E7D32',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  tableCellCategory: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  tableCellValue: {
+    fontSize: 14,
+    color: '#424242',
   },
 });

@@ -257,3 +257,14 @@
 ## Completar CRUD en Formularios Restantes (Nueva solicitud)
 - [x] Aplicar edición y eliminación al formulario de residuos sólidos
 - [x] Aplicar edición y eliminación al formulario de agua
+
+
+## Dashboard con Visualizaciones (Nueva solicitud)
+- [x] Instalar Recharts y dependencias necesarias
+- [x] Crear gráfico circular (PieChart) para emisiones por alcance (1, 2, 3)
+- [x] Crear gráfico de barras (BarChart) para comparación entre campus
+- [x] Crear tabla resumen con totales por categoría
+- [x] Agregar selector de año de inventario en dashboard
+- [x] Implementar carga de datos en tiempo real desde la base de datos
+- [x] Agregar indicadores de totales y comparativas
+- [x] Mejorar diseño responsivo del dashboard
