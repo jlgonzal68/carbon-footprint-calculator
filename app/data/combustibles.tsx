@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { ConfirmModal } from '@/components/confirm-modal';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -15,6 +16,9 @@ export default function CombustiblesScreen() {
   const [gasolina, setGasolina] = useState('');
   const [diesel, setDiesel] = useState('');
   const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<number | null>(null);
 
   const { data: organizaciones } = trpc.carbon.getOrganizaciones.useQuery(undefined, { enabled: !!user });
   const organizacion = organizaciones && Array.isArray(organizaciones) && organizaciones.length > 0 ? organizaciones[0] : null;
@@ -34,6 +38,7 @@ export default function CombustiblesScreen() {
       Alert.alert('Éxito', 'Combustible registrado correctamente');
       setGasolina('');
       setDiesel('');
+      setEditingId(null);
       refetch();
       setLoading(false);
     },
@@ -42,6 +47,55 @@ export default function CombustiblesScreen() {
       setLoading(false);
     },
   });
+
+  const updateCombustibleMutation = trpc.carbon.updateCombustible.useMutation({
+    onSuccess: () => {
+      Alert.alert('Éxito', 'Combustible actualizado correctamente');
+      setGasolina('');
+      setDiesel('');
+      setEditingId(null);
+      refetch();
+      setLoading(false);
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.message);
+      setLoading(false);
+    },
+  });
+
+  const deleteCombustibleMutation = trpc.carbon.deleteCombustible.useMutation({
+    onSuccess: () => {
+      Alert.alert('Éxito', 'Combustible eliminado correctamente');
+      refetch();
+      setDeleteModalVisible(false);
+      setItemToDelete(null);
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.message);
+      setDeleteModalVisible(false);
+      setItemToDelete(null);
+    },
+  });
+
+  const handleEdit = (item: any) => {
+    setEditingId(item.id);
+    if (item.tipo_combustible === 'gasolina') {
+      setGasolina(item.cantidad.toString());
+    } else {
+      setDiesel(item.cantidad.toString());
+    }
+  };
+
+  const handleDelete = (id: number) => {
+    setItemToDelete(id);
+    setDeleteModalVisible(true);
+  };
+
+  const confirmDelete = () => {
+    if (itemToDelete) {
+      deleteCombustibleMutation.mutate({ id: itemToDelete });
+    }
+  };
 
   const handleSubmit = () => {
     if (!selectedAno) {
@@ -52,35 +106,54 @@ export default function CombustiblesScreen() {
     const gasolinaNum = parseFloat(gasolina);
     const dieselNum = parseFloat(diesel);
 
-    if (!gasolina || isNaN(gasolinaNum) || gasolinaNum < 0) {
-      Alert.alert('Error', 'Ingresa una cantidad válida de gasolina');
-      return;
+    if (editingId) {
+      // Modo edición
+      const itemToEdit = (combustibles as any[])?.find((c: any) => c.id === editingId);
+      if (!itemToEdit) return;
+
+      const cantidad = itemToEdit.tipo_combustible === 'gasolina' ? gasolinaNum : dieselNum;
+      if (isNaN(cantidad) || cantidad <= 0) {
+        Alert.alert('Error', 'Ingresa una cantidad válida');
+        return;
+      }
+
+      setLoading(true);
+      updateCombustibleMutation.mutate({
+        id: editingId,
+        tipo_combustible: itemToEdit.tipo_combustible,
+        cantidad,
+      });
+    } else {
+      // Modo creación
+      if (!gasolina || isNaN(gasolinaNum) || gasolinaNum < 0) {
+        Alert.alert('Error', 'Ingresa una cantidad válida de gasolina');
+        return;
+      }
+
+      if (!diesel || isNaN(dieselNum) || dieselNum < 0) {
+        Alert.alert('Error', 'Ingresa una cantidad válida de diesel');
+        return;
+      }
+
+      setLoading(true);
+      createCombustibleMutation.mutate({
+        ano_inventario_id: selectedAno,
+        tipo: 'gasolina',
+        cantidad: gasolinaNum,
+      });
+
+      createCombustibleMutation.mutate({
+        ano_inventario_id: selectedAno,
+        tipo: 'diesel',
+        cantidad: dieselNum,
+      });
     }
-
-    if (!diesel || isNaN(dieselNum) || dieselNum < 0) {
-      Alert.alert('Error', 'Ingresa una cantidad válida de diesel');
-      return;
-    }
-
-    setLoading(true);
-    createCombustibleMutation.mutate({
-      ano_inventario_id: selectedAno,
-      tipo: 'gasolina',
-      cantidad: gasolinaNum,
-    });
-
-    createCombustibleMutation.mutate({
-      ano_inventario_id: selectedAno,
-      tipo: 'diesel',
-      cantidad: dieselNum,
-    });
   };
 
   const calcularEmisionEstimada = (litros: string, tipo: 'gasolina' | 'diesel') => {
     const cantidad = parseFloat(litros);
     if (isNaN(cantidad) || cantidad <= 0) return 0;
     
-    // Factores de emisión aproximados (kg CO2e por litro)
     const factores = {
       gasolina: 2.31,
       diesel: 2.68,
@@ -99,11 +172,11 @@ export default function CombustiblesScreen() {
           <ThemedText type="title" style={styles.title}>
             Combustibles
           </ThemedText>
-          <ThemedText style={styles.description}>
-            Primero debes crear una organización.
+          <ThemedText style={styles.noOrg}>
+            No tienes una organización creada. Ve a Configuración para crear una.
           </ThemedText>
-          <Pressable style={styles.primaryButton} onPress={() => router.push('/organizacion')}>
-            <Text style={styles.primaryButtonText}>Crear Organización</Text>
+          <Pressable style={styles.backButton} onPress={() => router.back()}>
+            <ThemedText style={styles.backText}>← Volver</ThemedText>
           </Pressable>
         </ThemedView>
       </ScrollView>
@@ -111,156 +184,171 @@ export default function CombustiblesScreen() {
   }
 
   return (
-    <ScrollView
-      style={[styles.container, { paddingTop: insets.top }]}
-      contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
-    >
-      <ThemedView style={styles.content}>
-        <ThemedText type="title" style={styles.title}>
-          Combustibles
-        </ThemedText>
+    <>
+      <ScrollView
+        style={[styles.container, { paddingTop: insets.top }]}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+      >
+        <ThemedView style={styles.content}>
+          <Pressable style={styles.backButton} onPress={() => router.back()}>
+            <ThemedText style={styles.backText}>← Volver</ThemedText>
+          </Pressable>
 
-        <ThemedText style={styles.description}>
-          Registra el consumo anual de combustibles (gasolina y diesel)
-        </ThemedText>
-
-        {/* Selector de Año */}
-        <ThemedView style={styles.section}>
-          <ThemedText type="subtitle" style={styles.label}>
-            Año de Inventario *
+          <ThemedText type="title" style={styles.title}>
+            ⛽ Consumo de Combustibles
           </ThemedText>
-          <View style={styles.yearSelector}>
-            {anosInventario && Array.isArray(anosInventario) && anosInventario.map((ano: any) => (
-              <Pressable
-                key={ano.id}
-                style={[
-                  styles.yearButton,
-                  selectedAno === ano.id && styles.yearButtonSelected,
-                ]}
-                onPress={() => setSelectedAno(ano.id)}
-              >
-                <Text
+
+          <ThemedView style={styles.card}>
+            <ThemedText type="subtitle" style={styles.cardTitle}>
+              Año de Inventario
+            </ThemedText>
+            <View style={styles.anoSelector}>
+              {(anosInventario as any[])?.map((ano: any) => (
+                <Pressable
+                  key={ano.id}
                   style={[
-                    styles.yearButtonText,
-                    selectedAno === ano.id && styles.yearButtonTextSelected,
+                    styles.anoButton,
+                    selectedAno === ano.id && styles.anoButtonSelected,
                   ]}
+                  onPress={() => setSelectedAno(ano.id)}
                 >
-                  {ano.ano}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </ThemedView>
+                  <Text
+                    style={[
+                      styles.anoText,
+                      selectedAno === ano.id && styles.anoTextSelected,
+                    ]}
+                  >
+                    {ano.ano}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </ThemedView>
 
-        {selectedAno && (
-          <>
-            {/* Formulario de Gasolina */}
-            <ThemedView style={styles.form}>
-              <ThemedText type="subtitle" style={styles.formTitle}>
-                🚗 Gasolina
-              </ThemedText>
+          {selectedAno && (
+            <>
+              <ThemedView style={styles.card}>
+                <ThemedText type="subtitle" style={styles.cardTitle}>
+                  {editingId ? 'Editar Registro' : 'Nuevo Registro'}
+                </ThemedText>
 
-              <ThemedText style={styles.label}>
-                Cantidad (litros) *
-              </ThemedText>
-              <TextInput
-                style={styles.input}
-                value={gasolina}
-                onChangeText={setGasolina}
-                placeholder="Ej: 5000"
-                keyboardType="numeric"
-                placeholderTextColor="#999"
-              />
-
-              {gasolina && parseFloat(gasolina) > 0 && (
-                <ThemedView style={styles.emissionPreview}>
-                  <ThemedText style={styles.emissionLabel}>
-                    Emisión estimada:
+                <ThemedText style={styles.label}>Gasolina (litros/año)</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  value={gasolina}
+                  onChangeText={setGasolina}
+                  keyboardType="numeric"
+                  placeholder="Ej: 5000"
+                  placeholderTextColor="#999"
+                />
+                {gasolina && (
+                  <ThemedText style={styles.emisionPreview}>
+                    Emisión estimada: {calcularEmisionEstimada(gasolina, 'gasolina')} kg CO₂e
                   </ThemedText>
-                  <ThemedText style={styles.emissionValue}>
-                    {calcularEmisionEstimada(gasolina, 'gasolina')} kg CO₂e
+                )}
+
+                <ThemedText style={styles.label}>Diesel (litros/año)</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  value={diesel}
+                  onChangeText={setDiesel}
+                  keyboardType="numeric"
+                  placeholder="Ej: 3000"
+                  placeholderTextColor="#999"
+                />
+                {diesel && (
+                  <ThemedText style={styles.emisionPreview}>
+                    Emisión estimada: {calcularEmisionEstimada(diesel, 'diesel')} kg CO₂e
                   </ThemedText>
-                </ThemedView>
-              )}
-            </ThemedView>
+                )}
 
-            {/* Formulario de Diesel */}
-            <ThemedView style={styles.form}>
-              <ThemedText type="subtitle" style={styles.formTitle}>
-                🚛 Diesel
-              </ThemedText>
+                <Pressable
+                  style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+                  onPress={handleSubmit}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <ThemedText style={styles.submitText}>
+                      {editingId ? 'Actualizar' : 'Guardar Registro'}
+                    </ThemedText>
+                  )}
+                </Pressable>
 
-              <ThemedText style={styles.label}>
-                Cantidad (litros) *
-              </ThemedText>
-              <TextInput
-                style={styles.input}
-                value={diesel}
-                onChangeText={setDiesel}
-                placeholder="Ej: 3000"
-                keyboardType="numeric"
-                placeholderTextColor="#999"
-              />
+                {editingId && (
+                  <Pressable
+                    style={styles.cancelButton}
+                    onPress={() => {
+                      setEditingId(null);
+                      setGasolina('');
+                      setDiesel('');
+                    }}
+                  >
+                    <ThemedText style={styles.cancelText}>Cancelar Edición</ThemedText>
+                  </Pressable>
+                )}
+              </ThemedView>
 
-              {diesel && parseFloat(diesel) > 0 && (
-                <ThemedView style={styles.emissionPreview}>
-                  <ThemedText style={styles.emissionLabel}>
-                    Emisión estimada:
-                  </ThemedText>
-                  <ThemedText style={styles.emissionValue}>
-                    {calcularEmisionEstimada(diesel, 'diesel')} kg CO₂e
-                  </ThemedText>
-                </ThemedView>
-              )}
-            </ThemedView>
-
-            {/* Botón de Guardar */}
-            <Pressable
-              style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-              onPress={handleSubmit}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.submitButtonText}>Guardar Combustibles</Text>
-              )}
-            </Pressable>
-
-            {/* Lista de Registros */}
-            {combustibles && Array.isArray(combustibles) && combustibles.length > 0 && (
-              <ThemedView style={styles.listSection}>
-                <ThemedText type="subtitle" style={styles.listTitle}>
+              <ThemedView style={styles.card}>
+                <ThemedText type="subtitle" style={styles.cardTitle}>
                   Registros Guardados
                 </ThemedText>
-                {combustibles.map((item: any) => (
-                  <ThemedView key={item.id} style={styles.listItem}>
-                    <View style={styles.listItemHeader}>
-                      <ThemedText style={styles.listItemType}>
-                        {item.tipo === 'gasolina' ? '🚗' : '🚛'} {item.tipo.toUpperCase()}
-                      </ThemedText>
-                      <ThemedText style={styles.listItemEmission}>
-                        {item.emision_co2e.toFixed(2)} kg CO₂e
-                      </ThemedText>
-                    </View>
-                    <ThemedText style={styles.listItemDetail}>
-                      Cantidad: {item.cantidad_litros} litros
-                    </ThemedText>
-                    <ThemedText style={styles.listItemDetail}>
-                      Factor: {item.factor_emision} kg CO₂e/litro
-                    </ThemedText>
-                  </ThemedView>
-                ))}
+                {(combustibles as any[])?.length === 0 ? (
+                  <ThemedText style={styles.noData}>
+                    No hay registros de combustibles para este año
+                  </ThemedText>
+                ) : (
+                  (combustibles as any[])?.map((item: any) => (
+                    <ThemedView key={item.id} style={styles.listItem}>
+                      <View style={styles.listItemContent}>
+                        <ThemedText type="defaultSemiBold">
+                          {item.tipo_combustible === 'gasolina' ? '⛽ Gasolina' : '🚛 Diesel'}
+                        </ThemedText>
+                        <ThemedText style={styles.listItemDetail}>
+                          Cantidad: {item.cantidad.toLocaleString()} litros
+                        </ThemedText>
+                        <ThemedText style={styles.listItemDetail}>
+                          Emisión: {item.emision_co2e.toFixed(2)} kg CO₂e
+                        </ThemedText>
+                      </View>
+                      <View style={styles.listItemActions}>
+                        <Pressable
+                          style={styles.editButton}
+                          onPress={() => handleEdit(item)}
+                        >
+                          <ThemedText style={styles.editButtonText}>✏️</ThemedText>
+                        </Pressable>
+                        <Pressable
+                          style={styles.deleteButton}
+                          onPress={() => handleDelete(item.id)}
+                        >
+                          <ThemedText style={styles.deleteButtonText}>🗑️</ThemedText>
+                        </Pressable>
+                      </View>
+                    </ThemedView>
+                  ))
+                )}
               </ThemedView>
-            )}
-          </>
-        )}
+            </>
+          )}
+        </ThemedView>
+      </ScrollView>
 
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>Volver</Text>
-        </Pressable>
-      </ThemedView>
-    </ScrollView>
+      <ConfirmModal
+        visible={deleteModalVisible}
+        title="Confirmar Eliminación"
+        message="¿Estás seguro de que deseas eliminar este registro? Esta acción no se puede deshacer."
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        danger
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setDeleteModalVisible(false);
+          setItemToDelete(null);
+        }}
+      />
+    </>
   );
 }
 
@@ -269,161 +357,138 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 20,
+    padding: 16,
+    gap: 16,
   },
-  title: {
-    marginBottom: 16,
+  backButton: {
+    paddingVertical: 8,
+  },
+  backText: {
+    fontSize: 16,
     color: '#2E7D32',
   },
-  description: {
-    fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 24,
-    color: '#666',
+  title: {
+    marginBottom: 8,
   },
-  section: {
-    marginBottom: 24,
+  noOrg: {
+    textAlign: 'center',
+    marginVertical: 20,
+  },
+  card: {
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
+    gap: 12,
+  },
+  cardTitle: {
+    marginBottom: 8,
+  },
+  anoSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  anoButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#E0E0E0',
+  },
+  anoButtonSelected: {
+    backgroundColor: '#2E7D32',
+  },
+  anoText: {
+    fontSize: 16,
+    color: '#424242',
+  },
+  anoTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   label: {
     fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 8,
     fontWeight: '600',
-    color: '#333',
-  },
-  yearSelector: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  yearButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
-  },
-  yearButtonSelected: {
-    borderColor: '#2E7D32',
-    backgroundColor: '#E8F5E9',
-  },
-  yearButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#666',
-  },
-  yearButtonTextSelected: {
-    color: '#2E7D32',
-  },
-  form: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
-  },
-  formTitle: {
-    marginBottom: 16,
-    color: '#2E7D32',
+    marginTop: 8,
   },
   input: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
+    borderColor: '#CCCCCC',
   },
-  emissionPreview: {
-    marginTop: 12,
-    padding: 12,
-    backgroundColor: '#E8F5E9',
-    borderRadius: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  emissionLabel: {
+  emisionPreview: {
     fontSize: 14,
-    color: '#1B5E20',
-  },
-  emissionValue: {
-    fontSize: 16,
-    fontWeight: '600',
     color: '#2E7D32',
+    fontStyle: 'italic',
   },
   submitButton: {
     backgroundColor: '#2E7D32',
-    padding: 16,
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
-    marginBottom: 24,
+    marginTop: 8,
   },
   submitButtonDisabled: {
     opacity: 0.6,
   },
-  submitButtonText: {
-    color: '#fff',
+  submitText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  listSection: {
-    marginBottom: 24,
+  cancelButton: {
+    backgroundColor: '#E0E0E0',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
   },
-  listTitle: {
-    marginBottom: 16,
-    color: '#2E7D32',
+  cancelText: {
+    color: '#424242',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  noData: {
+    textAlign: 'center',
+    fontStyle: 'italic',
+    color: '#757575',
   },
   listItem: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  listItemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
     marginBottom: 8,
   },
-  listItemType: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  listItemEmission: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2E7D32',
+  listItemContent: {
+    flex: 1,
+    gap: 4,
   },
   listItemDetail: {
     fontSize: 14,
-    lineHeight: 20,
-    color: '#666',
-    marginTop: 4,
+    color: '#757575',
   },
-  primaryButton: {
-    backgroundColor: '#2E7D32',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
+  listItemActions: {
+    flexDirection: 'row',
+    gap: 8,
   },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  editButton: {
+    padding: 8,
+    backgroundColor: '#FFF3E0',
+    borderRadius: 6,
   },
-  backButton: {
-    backgroundColor: '#666',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
+  editButtonText: {
+    fontSize: 18,
   },
-  backButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  deleteButton: {
+    padding: 8,
+    backgroundColor: '#FFEBEE',
+    borderRadius: 6,
+  },
+  deleteButtonText: {
+    fontSize: 18,
   },
 });

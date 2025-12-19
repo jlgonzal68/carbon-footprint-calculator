@@ -860,6 +860,328 @@ export const carbonRouter = router({
       }
     }),
 
+  // ============ ACTUALIZAR Y ELIMINAR ============
+  
+  updateCombustible: protectedProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      tipo_combustible: z.enum(['gasolina', 'diesel']),
+      cantidad: z.number().positive(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, tipo_combustible, cantidad } = input;
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT ano_inventario_id FROM consumo_combustible WHERE id = ?`,
+          [id]
+        );
+        if ((rows as any[]).length === 0) {
+          await db.end();
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Registro no encontrado' });
+        }
+        const ano_inventario_id = (rows as any[])[0].ano_inventario_id;
+        
+        const [factores] = await db.execute(
+          `SELECT factor_emision FROM factores_emision 
+           WHERE ano_inventario_id = ? AND categoria = 'combustible' AND tipo = ?`,
+          [ano_inventario_id, tipo_combustible]
+        );
+        const factor_emision = (factores as any[])[0]?.factor_emision || 0;
+        const emision_co2e = cantidad * factor_emision;
+        
+        await db.execute(
+          `UPDATE consumo_combustible SET tipo_combustible = ?, cantidad = ?, emision_co2e = ? WHERE id = ?`,
+          [tipo_combustible, cantidad, emision_co2e, id]
+        );
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  deleteCombustible: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT ano_inventario_id FROM consumo_combustible WHERE id = ?`,
+          [input.id]
+        );
+        if ((rows as any[]).length === 0) {
+          await db.end();
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Registro no encontrado' });
+        }
+        const ano_inventario_id = (rows as any[])[0].ano_inventario_id;
+        await db.execute(`DELETE FROM consumo_combustible WHERE id = ?`, [input.id]);
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  updateEnergia: protectedProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      cantidad_kwh: z.number().positive(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, cantidad_kwh } = input;
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT ano_inventario_id FROM consumo_energia WHERE id = ?`,
+          [id]
+        );
+        if ((rows as any[]).length === 0) {
+          await db.end();
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Registro no encontrado' });
+        }
+        const ano_inventario_id = (rows as any[])[0].ano_inventario_id;
+        
+        const [factores] = await db.execute(
+          `SELECT factor_emision FROM factores_emision WHERE ano_inventario_id = ? AND categoria = 'energia'`,
+          [ano_inventario_id]
+        );
+        const factor_emision = (factores as any[])[0]?.factor_emision || 0;
+        const emision_co2e = cantidad_kwh * factor_emision;
+        
+        await db.execute(
+          `UPDATE consumo_energia SET cantidad_kwh = ?, emision_co2e = ? WHERE id = ?`,
+          [cantidad_kwh, emision_co2e, id]
+        );
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  deleteEnergia: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT ano_inventario_id FROM consumo_energia WHERE id = ?`,
+          [input.id]
+        );
+        if ((rows as any[]).length === 0) {
+          await db.end();
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Registro no encontrado' });
+        }
+        const ano_inventario_id = (rows as any[])[0].ano_inventario_id;
+        await db.execute(`DELETE FROM consumo_energia WHERE id = ?`, [input.id]);
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  updateAireAcondicionado: protectedProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      capacidad_btu: z.number().positive(),
+      capacidad_kg: z.number().positive(),
+      cantidad: z.number().int().positive(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, capacidad_btu, capacidad_kg, cantidad } = input;
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT ano_inventario_id FROM inventario_aires_acond WHERE id = ?`,
+          [id]
+        );
+        if ((rows as any[]).length === 0) {
+          await db.end();
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Registro no encontrado' });
+        }
+        const ano_inventario_id = (rows as any[])[0].ano_inventario_id;
+        const emision_co2e = capacidad_kg * cantidad * 0.001;
+        
+        await db.execute(
+          `UPDATE inventario_aires_acond SET capacidad_btu = ?, capacidad_kg = ?, cantidad = ?, emision_total_co2e = ? WHERE id = ?`,
+          [capacidad_btu, capacidad_kg, cantidad, emision_co2e, id]
+        );
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  updateExtintor: protectedProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      peso_kg: z.number().positive(),
+      cantidad: z.number().int().positive(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, peso_kg, cantidad } = input;
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT ano_inventario_id, factor_emision FROM inventario_extintores WHERE id = ?`,
+          [id]
+        );
+        if ((rows as any[]).length === 0) {
+          await db.end();
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Registro no encontrado' });
+        }
+        const ano_inventario_id = (rows as any[])[0].ano_inventario_id;
+        const factor_emision = (rows as any[])[0].factor_emision;
+        const emision_co2e = peso_kg * cantidad * factor_emision;
+        
+        await db.execute(
+          `UPDATE inventario_extintores SET peso_kg = ?, cantidad = ?, emision_co2e = ? WHERE id = ?`,
+          [peso_kg, cantidad, emision_co2e, id]
+        );
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  updateResiduo: protectedProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      cantidad_kg: z.number().positive(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, cantidad_kg } = input;
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT ano_inventario_id, factor_emision FROM residuos_solidos WHERE id = ?`,
+          [id]
+        );
+        if ((rows as any[]).length === 0) {
+          await db.end();
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Registro no encontrado' });
+        }
+        const ano_inventario_id = (rows as any[])[0].ano_inventario_id;
+        const factor_emision = (rows as any[])[0].factor_emision;
+        const emision_co2e = cantidad_kg * factor_emision;
+        
+        await db.execute(
+          `UPDATE residuos_solidos SET cantidad_kg = ?, emision_co2e = ? WHERE id = ?`,
+          [cantidad_kg, emision_co2e, id]
+        );
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  deleteResiduo: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT ano_inventario_id FROM residuos_solidos WHERE id = ?`,
+          [input.id]
+        );
+        if ((rows as any[]).length === 0) {
+          await db.end();
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Registro no encontrado' });
+        }
+        const ano_inventario_id = (rows as any[])[0].ano_inventario_id;
+        await db.execute(`DELETE FROM residuos_solidos WHERE id = ?`, [input.id]);
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  updateAgua: protectedProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      agua_potable_m3: z.number().nonnegative(),
+      agua_residual_m3: z.number().nonnegative(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, agua_potable_m3, agua_residual_m3 } = input;
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT ano_inventario_id, factor_emision_potable, factor_emision_residual FROM consumo_agua WHERE id = ?`,
+          [id]
+        );
+        if ((rows as any[]).length === 0) {
+          await db.end();
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Registro no encontrado' });
+        }
+        const ano_inventario_id = (rows as any[])[0].ano_inventario_id;
+        const factor_emision_potable = (rows as any[])[0].factor_emision_potable;
+        const factor_emision_residual = (rows as any[])[0].factor_emision_residual;
+        
+        const emision_potable_co2e = agua_potable_m3 * factor_emision_potable;
+        const emision_residual_co2e = agua_residual_m3 * factor_emision_residual;
+        const emision_total_co2e = emision_potable_co2e + emision_residual_co2e;
+        
+        await db.execute(
+          `UPDATE consumo_agua SET agua_potable_m3 = ?, agua_residual_m3 = ?, 
+           emision_potable_co2e = ?, emision_residual_co2e = ?, emision_total_co2e = ? WHERE id = ?`,
+          [agua_potable_m3, agua_residual_m3, emision_potable_co2e, emision_residual_co2e, emision_total_co2e, id]
+        );
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  deleteAgua: protectedProcedure
+    .input(z.object({ id: z.number().int().positive() }))
+    .mutation(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [rows] = await db.execute(
+          `SELECT ano_inventario_id FROM consumo_agua WHERE id = ?`,
+          [input.id]
+        );
+        if ((rows as any[]).length === 0) {
+          await db.end();
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Registro no encontrado' });
+        }
+        const ano_inventario_id = (rows as any[])[0].ano_inventario_id;
+        await db.execute(`DELETE FROM consumo_agua WHERE id = ?`, [input.id]);
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
 });
 
 // ============ FUNCIONES AUXILIARES ============

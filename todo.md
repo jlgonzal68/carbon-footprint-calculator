@@ -235,3 +235,14 @@
 - [x] Crear formulario completo de residuos sólidos (clasificados por tipo)
 - [x] Crear formulario completo de agua potable y residual
 - [x] Actualizar pantalla de datos con navegación a nuevos formularios
+
+
+## Funcionalidad de Edición y Eliminación (Nueva solicitud)
+- [x] Agregar endpoints de API para actualizar y eliminar registros
+- [x] Implementar modal de confirmación reutilizable
+- [x] Agregar botones de editar y eliminar en formulario de combustibles
+- [ ] Agregar botones de editar y eliminar en formulario de energía
+- [ ] Agregar botones de editar y eliminar en formulario de aires acondicionados
+- [ ] Agregar botones de editar y eliminar en formulario de extintores
+- [ ] Agregar botones de editar y eliminar en formulario de residuos
+- [ ] Agregar botones de editar y eliminar en formulario de agua
