@@ -64,6 +64,22 @@ const categories: DataCategory[] = [
     route: '/data/extintores',
     color: '#D32F2F',
   },
+  {
+    id: 'residuos',
+    title: 'Residuos Sólidos',
+    description: 'Residuos clasificados por tipo de disposición',
+    icon: 'paperplane.fill',
+    route: '/data/residuos',
+    color: '#7B1FA2',
+  },
+  {
+    id: 'agua',
+    title: 'Agua Potable y Residual',
+    description: 'Consumo de agua por campus',
+    icon: 'paperplane.fill',
+    route: '/data/agua',
+    color: '#0288D1',
+  },
 ];
 
 export default function DataScreen() {
@@ -129,12 +145,10 @@ export default function DataScreen() {
 
         <ThemedView style={styles.infoBox}>
           <ThemedText type="subtitle" style={styles.infoTitle}>
-            📋 Próximamente
+            ✅ Todos los formularios disponibles
           </ThemedText>
           <ThemedText style={styles.infoText}>
-            • Residuos Sólidos (clasificados por tipo){'\n'}
-            • Agua Potable y Residual por campus{'\n'}
-            • Gestión de Factores de Emisión
+            La aplicación cuenta con todos los formularios necesarios para calcular la huella de carbono según ISO 14064-1:2018. Selecciona una categoría arriba para comenzar a ingresar datos.
           </ThemedText>
         </ThemedView>
       </ThemedView>

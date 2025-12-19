@@ -229,3 +229,9 @@
 - [x] Agregar validaciones en todos los formularios
 - [x] Mostrar cálculo de emisiones en tiempo real
 - [x] Implementar listado de registros con opciones de editar/eliminar
+
+
+## Formularios Restantes (Nueva solicitud)
+- [x] Crear formulario completo de residuos sólidos (clasificados por tipo)
+- [x] Crear formulario completo de agua potable y residual
+- [x] Actualizar pantalla de datos con navegación a nuevos formularios
