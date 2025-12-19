@@ -1,278 +1,363 @@
-import { Image } from "expo-image";
-import { useRouter, Link } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
+import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, StyleSheet } from "react-native";
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { HelloWave } from "@/components/hello-wave";
-import ParallaxScrollView from "@/components/parallax-scroll-view";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
-import { getLoginUrl } from "@/constants/oauth";
+import { IconSymbol } from "@/components/ui/icon-symbol";
+import { Colors } from "@/constants/theme";
 import { useAuth } from "@/hooks/use-auth";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+import { trpc } from "@/lib/trpc";
 
-export default function HomeScreen() {
-  const { user, loading, isAuthenticated, logout } = useAuth();
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
+export default function DashboardScreen() {
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? "light"];
+
+  const [selectedOrgId, setSelectedOrgId] = useState<number | null>(null);
+  const [selectedYearId, setSelectedYearId] = useState<number | null>(null);
+
+  // Queries
+  const { data: organizaciones, isLoading: loadingOrgs } = trpc.carbon.getOrganizaciones.useQuery(
+    undefined,
+    { enabled: isAuthenticated }
+  );
+
+  const { data: anosInventario, isLoading: loadingYears } = trpc.carbon.getAnosInventario.useQuery(
+    { organizacion_id: selectedOrgId! },
+    { enabled: !!selectedOrgId }
+  );
+
+  const { data: resumen, isLoading: loadingResumen } = trpc.carbon.getResumenHuellaCarbono.useQuery(
+    { ano_inventario_id: selectedYearId! },
+    { enabled: !!selectedYearId }
+  );
+
+  // Auto-select first organization and year
+  useEffect(() => {
+    if (organizaciones && Array.isArray(organizaciones) && organizaciones.length > 0 && !selectedOrgId) {
+      setSelectedOrgId((organizaciones as any)[0].id);
+    }
+  }, [organizaciones, selectedOrgId]);
 
   useEffect(() => {
-    console.log("[HomeScreen] Auth state:", {
-      hasUser: !!user,
-      loading,
-      isAuthenticated,
-      user: user ? { id: user.id, openId: user.openId, name: user.name, email: user.email } : null,
-    });
-  }, [user, loading, isAuthenticated]);
-
-  const handleLogin = async () => {
-    try {
-      console.log("[Auth] Login button clicked");
-      setIsLoggingIn(true);
-      const loginUrl = getLoginUrl();
-      console.log("[Auth] Generated login URL:", loginUrl);
-
-      // On web, use direct redirect in same tab
-      // On mobile, use WebBrowser to open OAuth in a separate context
-      if (Platform.OS === "web") {
-        console.log("[Auth] Web platform: redirecting to OAuth in same tab...");
-        window.location.href = loginUrl;
-        return;
-      }
-
-      // Mobile: Open OAuth URL in browser
-      // The OAuth server will redirect to our deep link (manusapp://oauth/callback?code=...&state=...)
-      console.log("[Auth] Opening OAuth URL in browser...");
-      const result = await WebBrowser.openAuthSessionAsync(
-        loginUrl,
-        undefined, // Deep link is already configured in getLoginUrl, so no need to specify here
-        {
-          preferEphemeralSession: false,
-          showInRecents: true,
-        },
-      );
-
-      console.log("[Auth] WebBrowser result:", result);
-      if (result.type === "cancel") {
-        console.log("[Auth] OAuth cancelled by user");
-      } else if (result.type === "dismiss") {
-        console.log("[Auth] OAuth dismissed");
-      } else if (result.type === "success" && result.url) {
-        console.log("[Auth] OAuth session successful, navigating to callback:", result.url);
-        // Extract code and state from the URL
-        try {
-          // Parse the URL - it might be exp:// or a regular URL
-          let url: URL;
-          if (result.url.startsWith("exp://") || result.url.startsWith("exps://")) {
-            // For exp:// URLs, we need to parse them differently
-            // Format: exp://192.168.31.156:8081/--/oauth/callback?code=...&state=...
-            const urlStr = result.url.replace(/^exp(s)?:\/\//, "http://");
-            url = new URL(urlStr);
-          } else {
-            url = new URL(result.url);
-          }
-
-          const code = url.searchParams.get("code");
-          const state = url.searchParams.get("state");
-          const error = url.searchParams.get("error");
-
-          console.log("[Auth] Extracted params from callback URL:", {
-            code: code?.substring(0, 20) + "...",
-            state: state?.substring(0, 20) + "...",
-            error,
-          });
-
-          if (error) {
-            console.error("[Auth] OAuth error in callback:", error);
-            return;
-          }
-
-          if (code && state) {
-            // Navigate to callback route with params
-            console.log("[Auth] Navigating to callback route with params...");
-            router.push({
-              pathname: "/oauth/callback" as any,
-              params: { code, state },
-            });
-          } else {
-            console.error("[Auth] Missing code or state in callback URL");
-          }
-        } catch (err) {
-          console.error("[Auth] Failed to parse callback URL:", err, result.url);
-          // Fallback: try parsing with regex
-          const codeMatch = result.url.match(/[?&]code=([^&]+)/);
-          const stateMatch = result.url.match(/[?&]state=([^&]+)/);
-
-          if (codeMatch && stateMatch) {
-            const code = decodeURIComponent(codeMatch[1]);
-            const state = decodeURIComponent(stateMatch[1]);
-            console.log("[Auth] Fallback: extracted params via regex, navigating...");
-            router.push({
-              pathname: "/oauth/callback" as any,
-              params: { code, state },
-            });
-          } else {
-            console.error("[Auth] Could not extract code/state from URL");
-          }
-        }
-      }
-    } catch (error) {
-      console.error("[Auth] Login error:", error);
-    } finally {
-      setIsLoggingIn(false);
+    if (anosInventario && (anosInventario as any[]).length > 0 && !selectedYearId) {
+      setSelectedYearId((anosInventario as any)[0].id);
     }
-  };
+  }, [anosInventario, selectedYearId]);
+
+  if (authLoading) {
+    return (
+      <ThemedView style={styles.centerContainer}>
+        <ActivityIndicator size="large" color={colors.tint} />
+      </ThemedView>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <ThemedView style={[styles.container, { paddingTop: insets.top + 16 }]}>
+        <View style={styles.emptyState}>
+          <IconSymbol name="leaf.fill" size={64} color={colors.tint} />
+          <ThemedText type="title" style={styles.emptyTitle}>
+            Calculadora de Huella de Carbono
+          </ThemedText>
+          <ThemedText style={[styles.emptyText, { color: colors.textSecondary }]}>
+            Inicia sesión para comenzar a calcular la huella de carbono de tu institución educativa
+          </ThemedText>
+          <Pressable
+            style={[styles.button, { backgroundColor: colors.tint }]}
+            onPress={() => router.push("/modal")}
+          >
+            <ThemedText style={styles.buttonText}>Iniciar Sesión</ThemedText>
+          </Pressable>
+        </View>
+      </ThemedView>
+    );
+  }
+
+  if (loadingOrgs) {
+    return (
+      <ThemedView style={styles.centerContainer}>
+        <ActivityIndicator size="large" color={colors.tint} />
+        <ThemedText style={{ marginTop: 16, color: colors.textSecondary }}>
+          Cargando datos...
+        </ThemedText>
+      </ThemedView>
+    );
+  }
+
+  if (!organizaciones || !Array.isArray(organizaciones) || organizaciones.length === 0) {
+    return (
+      <ThemedView style={[styles.container, { paddingTop: insets.top + 16 }]}>
+        <View style={styles.emptyState}>
+          <IconSymbol name="building.2.fill" size={64} color={colors.tint} />
+          <ThemedText type="title" style={styles.emptyTitle}>
+            No hay organizaciones
+          </ThemedText>
+          <ThemedText style={[styles.emptyText, { color: colors.textSecondary }]}>
+            Crea tu primera organización para comenzar a calcular la huella de carbono
+          </ThemedText>
+          <Pressable
+            style={[styles.button, { backgroundColor: colors.tint }]}
+            onPress={() => router.push("/(tabs)/settings")}
+          >
+            <ThemedText style={styles.buttonText}>Crear Organización</ThemedText>
+          </Pressable>
+        </View>
+      </ThemedView>
+    );
+  }
 
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: "#A1CEDC", dark: "#1D3D47" }}
-      headerImage={
-        <Image
-          source={require("@/assets/images/partial-react-logo.png")}
-          style={styles.reactLogo}
-        />
-      }
+    <ScrollView
+      style={[styles.scrollView, { backgroundColor: colors.backgroundSecondary }]}
+      contentContainerStyle={{ paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }}
     >
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.authContainer}>
-        {loading ? (
-          <ActivityIndicator />
-        ) : isAuthenticated && user ? (
-          <ThemedView style={styles.userInfo}>
-            <ThemedText type="subtitle">Logged in as</ThemedText>
-            <ThemedText type="defaultSemiBold">{user.name || user.email || user.openId}</ThemedText>
-            <Pressable onPress={logout} style={styles.logoutButton}>
-              <ThemedText style={styles.logoutText}>Logout</ThemedText>
-            </Pressable>
-          </ThemedView>
-        ) : (
-          <Pressable
-            onPress={handleLogin}
-            disabled={isLoggingIn}
-            style={[styles.loginButton, isLoggingIn && styles.loginButtonDisabled]}
-          >
-            {isLoggingIn ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <ThemedText style={styles.loginText}>Login</ThemedText>
-            )}
-          </Pressable>
-        )}
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{" "}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: "cmd + d",
-              android: "cmd + m",
-              web: "F12",
-            })}
-          </ThemedText>{" "}
-          to open developer tools.
+      <ThemedView style={styles.header}>
+        <ThemedText type="title">Dashboard</ThemedText>
+        <ThemedText style={{ color: colors.textSecondary, marginTop: 4 }}>
+          Resumen de Huella de Carbono
         </ThemedText>
       </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert("Action pressed")} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert("Share pressed")}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert("Delete pressed")}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{" "}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{" "}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{" "}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      {/* Selector de Año */}
+      {anosInventario && (anosInventario as any[]).length > 0 && (
+        <ThemedView style={[styles.card, { backgroundColor: colors.card }]}>
+          <ThemedText type="subtitle" style={{ marginBottom: 12 }}>
+            Año de Inventario
+          </ThemedText>
+          <View style={styles.yearSelector}>
+            {(anosInventario as any[]).map((ano: any) => (
+              <Pressable
+                key={ano.id}
+                style={[
+                  styles.yearButton,
+                  {
+                    backgroundColor:
+                      selectedYearId === ano.id ? colors.tint : colors.backgroundSecondary,
+                    borderColor: colors.border,
+                  },
+                ]}
+                onPress={() => setSelectedYearId(ano.id)}
+              >
+                <ThemedText
+                  style={{
+                    color: selectedYearId === ano.id ? "#FFFFFF" : colors.text,
+                    fontWeight: selectedYearId === ano.id ? "600" : "400",
+                  }}
+                >
+                  {ano.ano}
+                </ThemedText>
+              </Pressable>
+            ))}
+          </View>
+        </ThemedView>
+      )}
+
+      {/* Resumen de Emisiones */}
+      {loadingResumen ? (
+        <ThemedView style={[styles.card, { backgroundColor: colors.card }]}>
+          <ActivityIndicator size="large" color={colors.tint} />
+        </ThemedView>
+      ) : resumen ? (
+        <>
+          <ThemedView style={[styles.card, { backgroundColor: colors.card }]}>
+            <View style={styles.totalCard}>
+              <IconSymbol name="leaf.fill" size={48} color={colors.success} />
+              <View style={{ flex: 1, marginLeft: 16 }}>
+                <ThemedText style={{ color: colors.textSecondary }}>Total CO₂e</ThemedText>
+                <ThemedText type="title" style={{ color: colors.success }}>
+                  {((resumen as any).total_co2e / 1000).toFixed(2)} t
+                </ThemedText>
+                <ThemedText style={{ color: colors.textSecondary, fontSize: 12 }}>
+                  Toneladas de CO₂ equivalente
+                </ThemedText>
+              </View>
+            </View>
+          </ThemedView>
+
+          <ThemedView style={[styles.card, { backgroundColor: colors.card }]}>
+            <ThemedText type="subtitle" style={{ marginBottom: 16 }}>
+              Emisiones por Alcance
+            </ThemedText>
+
+            <View style={styles.alcanceRow}>
+              <View style={styles.alcanceItem}>
+                <View style={[styles.alcanceBadge, { backgroundColor: colors.error + "20" }]}>
+                  <IconSymbol name="flame.fill" size={24} color={colors.error} />
+                </View>
+                <ThemedText style={[styles.alcanceLabel, { color: colors.textSecondary }]}>
+                  Alcance 1
+                </ThemedText>
+                <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>
+                  {((resumen as any).alcance_1 / 1000).toFixed(2)} t
+                </ThemedText>
+                <ThemedText style={[styles.alcanceDesc, { color: colors.textSecondary }]}>
+                  Emisiones directas
+                </ThemedText>
+              </View>
+
+              <View style={styles.alcanceItem}>
+                <View style={[styles.alcanceBadge, { backgroundColor: colors.warning + "20" }]}>
+                  <IconSymbol name="bolt.fill" size={24} color={colors.warning} />
+                </View>
+                <ThemedText style={[styles.alcanceLabel, { color: colors.textSecondary }]}>
+                  Alcance 2
+                </ThemedText>
+                <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>
+                  {((resumen as any).alcance_2 / 1000).toFixed(2)} t
+                </ThemedText>
+                <ThemedText style={[styles.alcanceDesc, { color: colors.textSecondary }]}>
+                  Energía eléctrica
+                </ThemedText>
+              </View>
+
+              <View style={styles.alcanceItem}>
+                <View style={[styles.alcanceBadge, { backgroundColor: colors.secondary + "20" }]}>
+                  <IconSymbol name="drop.fill" size={24} color={colors.secondary} />
+                </View>
+                <ThemedText style={[styles.alcanceLabel, { color: colors.textSecondary }]}>
+                  Alcance 3
+                </ThemedText>
+                <ThemedText type="defaultSemiBold" style={{ fontSize: 18 }}>
+                  {((resumen as any).alcance_3 / 1000).toFixed(2)} t
+                </ThemedText>
+                <ThemedText style={[styles.alcanceDesc, { color: colors.textSecondary }]}>
+                  Otras emisiones
+                </ThemedText>
+              </View>
+            </View>
+          </ThemedView>
+
+          <Pressable
+            style={[styles.button, { backgroundColor: colors.tint, marginHorizontal: 16 }]}
+            onPress={() => router.push("/(tabs)/data")}
+          >
+            <ThemedText style={styles.buttonText}>Ingresar Datos</ThemedText>
+          </Pressable>
+        </>
+      ) : (
+        <ThemedView style={[styles.card, { backgroundColor: colors.card }]}>
+          <View style={styles.emptyState}>
+            <IconSymbol name="doc.text.fill" size={48} color={colors.textSecondary} />
+            <ThemedText style={{ marginTop: 12, color: colors.textSecondary }}>
+              No hay datos disponibles para este año
+            </ThemedText>
+          </View>
+        </ThemedView>
+      )}
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+  scrollView: {
+    flex: 1,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: "absolute",
-  },
-  authContainer: {
-    marginBottom: 16,
+  container: {
+    flex: 1,
     padding: 16,
-    borderRadius: 8,
-    backgroundColor: "rgba(0, 0, 0, 0.05)",
   },
-  userInfo: {
-    gap: 8,
+  centerContainer: {
+    flex: 1,
+    justifyContent: "center",
     alignItems: "center",
   },
-  loginButton: {
-    backgroundColor: "#007AFF",
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+  header: {
+    padding: 16,
+    paddingBottom: 8,
+  },
+  card: {
+    margin: 16,
+    marginTop: 8,
+    padding: 16,
+    borderRadius: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 32,
+  },
+  emptyTitle: {
+    marginTop: 16,
+    textAlign: "center",
+  },
+  emptyText: {
+    marginTop: 8,
+    textAlign: "center",
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  button: {
+    marginTop: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 44,
+    minWidth: 200,
   },
-  loginButtonDisabled: {
-    opacity: 0.6,
-  },
-  loginText: {
-    color: "#fff",
+  buttonText: {
+    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "600",
   },
-  logoutButton: {
-    marginTop: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-    backgroundColor: "rgba(255, 59, 48, 0.1)",
+  yearSelector: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
   },
-  logoutText: {
-    color: "#FF3B30",
-    fontSize: 14,
-    fontWeight: "500",
+  yearButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  totalCard: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  alcanceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  alcanceItem: {
+    flex: 1,
+    alignItems: "center",
+  },
+  alcanceBadge: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  alcanceLabel: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  alcanceDesc: {
+    fontSize: 11,
+    textAlign: "center",
+    marginTop: 2,
   },
 });
