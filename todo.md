@@ -283,3 +283,16 @@
 - [x] Incluir gráficos en el PDF (alcances y campus)
 - [x] Agregar numeración de páginas
 - [x] Implementar botón de descarga/compartir PDF
+
+
+## Gestión de Factores de Emisión (Nueva solicitud)
+- [x] Crear pantalla de gestión de factores de emisión en Configuración
+- [x] Mostrar todos los factores del año seleccionado en formato editable
+- [x] Agrupar factores por categoría (combustibles, energía, refrigerantes, etc.)
+- [x] Implementar formulario de edición con validaciones
+- [x] Agregar endpoint de API para actualizar factores de emisión
+- [x] Mostrar unidades claramente para cada factor
+- [x] Implementar confirmación antes de guardar cambios
+- [ ] Agregar histórico de cambios en factores (opcional)
+- [x] Recalcular automáticamente emisiones al actualizar factores
+- [ ] Agregar botón para restaurar factores por defecto

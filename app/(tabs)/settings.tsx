@@ -1,5 +1,6 @@
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { router } from 'expo-router';
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -14,6 +15,10 @@ export default function SettingsScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
 
+  const navigateTo = (path: string) => {
+    router.push(path as any);
+  };
+
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.backgroundSecondary }]}
@@ -24,33 +29,83 @@ export default function SettingsScreen() {
       </ThemedView>
 
       {isAuthenticated && user && (
-        <ThemedView style={[styles.card, { backgroundColor: colors.card }]}>
-          <View style={styles.userInfo}>
-            <View style={[styles.avatar, { backgroundColor: colors.tint }]}>
-              <ThemedText style={{ color: "#FFFFFF", fontSize: 24, fontWeight: "600" }}>
-                {(user.name || user.email || "U").charAt(0).toUpperCase()}
-              </ThemedText>
-            </View>
-            <View style={{ flex: 1, marginLeft: 16 }}>
-              <ThemedText type="subtitle">{user.name || "Usuario"}</ThemedText>
-              {user.email && (
-                <ThemedText style={{ color: colors.textSecondary, marginTop: 4 }}>
-                  {user.email}
+        <>
+          <ThemedView style={[styles.card, { backgroundColor: colors.card }]}>
+            <View style={styles.userInfo}>
+              <View style={[styles.avatar, { backgroundColor: colors.tint }]}>
+                <ThemedText style={{ color: "#FFFFFF", fontSize: 24, fontWeight: "600" }}>
+                  {(user.name || user.email || "U").charAt(0).toUpperCase()}
                 </ThemedText>
-              )}
+              </View>
+              <View style={{ flex: 1, marginLeft: 16 }}>
+                <ThemedText type="subtitle">{user.name || "Usuario"}</ThemedText>
+                {user.email && (
+                  <ThemedText style={{ color: colors.textSecondary, marginTop: 4 }}>
+                    {user.email}
+                  </ThemedText>
+                )}
+              </View>
             </View>
-          </View>
 
-          <Pressable
-            style={[styles.logoutButton, { backgroundColor: colors.error + "20" }]}
-            onPress={logout}
-          >
-            <IconSymbol name="paperplane.fill" size={20} color={colors.error} />
-            <ThemedText style={{ color: colors.error, marginLeft: 8, fontWeight: "600" }}>
-              Cerrar Sesión
+            <Pressable
+              style={[styles.logoutButton, { backgroundColor: colors.error + "20" }]}
+              onPress={logout}
+            >
+              <IconSymbol name="paperplane.fill" size={20} color={colors.error} />
+              <ThemedText style={{ color: colors.error, marginLeft: 8, fontWeight: "600" }}>
+                Cerrar Sesión
+              </ThemedText>
+            </Pressable>
+          </ThemedView>
+
+          <ThemedView style={[styles.card, { backgroundColor: colors.card }]}>
+            <ThemedText type="subtitle" style={{ marginBottom: 12 }}>
+              Gestión
             </ThemedText>
-          </Pressable>
-        </ThemedView>
+            
+            <Pressable
+              style={[styles.menuItem, { borderBottomColor: colors.border }]}
+              onPress={() => navigateTo('/organizacion')}
+            >
+              <ThemedText style={styles.menuIcon}>🏢</ThemedText>
+              <View style={styles.menuContent}>
+                <ThemedText style={styles.menuTitle}>Organizaciones</ThemedText>
+                <ThemedText style={{ color: colors.textSecondary, fontSize: 13 }}>
+                  Gestionar información de la organización
+                </ThemedText>
+              </View>
+              <ThemedText style={{ color: colors.textSecondary, fontSize: 20 }}>›</ThemedText>
+            </Pressable>
+
+            <Pressable
+              style={[styles.menuItem, { borderBottomColor: colors.border }]}
+              onPress={() => navigateTo('/anos-inventario')}
+            >
+              <ThemedText style={styles.menuIcon}>📅</ThemedText>
+              <View style={styles.menuContent}>
+                <ThemedText style={styles.menuTitle}>Años de Inventario</ThemedText>
+                <ThemedText style={{ color: colors.textSecondary, fontSize: 13 }}>
+                  Crear y gestionar años de inventario
+                </ThemedText>
+              </View>
+              <ThemedText style={{ color: colors.textSecondary, fontSize: 20 }}>›</ThemedText>
+            </Pressable>
+
+            <Pressable
+              style={[styles.menuItem, { borderBottomWidth: 0 }]}
+              onPress={() => navigateTo('/factores-emision')}
+            >
+              <ThemedText style={styles.menuIcon}>🔬</ThemedText>
+              <View style={styles.menuContent}>
+                <ThemedText style={styles.menuTitle}>Factores de Emisión</ThemedText>
+                <ThemedText style={{ color: colors.textSecondary, fontSize: 13 }}>
+                  Actualizar factores según regulaciones
+                </ThemedText>
+              </View>
+              <ThemedText style={{ color: colors.textSecondary, fontSize: 20 }}>›</ThemedText>
+            </Pressable>
+          </ThemedView>
+        </>
       )}
 
       <ThemedView style={[styles.card, { backgroundColor: colors.card }]}>
@@ -107,5 +162,23 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 12,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    gap: 12,
+  },
+  menuIcon: {
+    fontSize: 24,
+  },
+  menuContent: {
+    flex: 1,
+    gap: 4,
+  },
+  menuTitle: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

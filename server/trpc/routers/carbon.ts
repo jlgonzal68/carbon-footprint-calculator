@@ -1182,6 +1182,177 @@ export const carbonRouter = router({
       }
     }),
 
+  updateFactoresEmision: protectedProcedure
+    .input(z.object({
+      ano_inventario_id: z.number().int().positive(),
+      gasolina_kg_co2e_por_litro: z.number().nonnegative(),
+      diesel_kg_co2e_por_litro: z.number().nonnegative(),
+      energia_kg_co2e_por_kwh: z.number().nonnegative(),
+      r22_kg_co2e_por_kg: z.number().nonnegative(),
+      r410a_kg_co2e_por_kg: z.number().nonnegative(),
+      r134a_kg_co2e_por_kg: z.number().nonnegative(),
+      co2_extintor_kg_co2e_por_kg: z.number().nonnegative(),
+      pqs_extintor_kg_co2e_por_kg: z.number().nonnegative(),
+      residuo_relleno_kg_co2e_por_kg: z.number().nonnegative(),
+      residuo_compostado_kg_co2e_por_kg: z.number().nonnegative(),
+      residuo_peligroso_kg_co2e_por_kg: z.number().nonnegative(),
+      residuo_reciclado_kg_co2e_por_kg: z.number().nonnegative(),
+      agua_potable_kg_co2e_por_m3: z.number().nonnegative(),
+      agua_residual_kg_co2e_por_m3: z.number().nonnegative(),
+    }))
+    .mutation(async ({ input }) => {
+      const { ano_inventario_id, ...factores } = input;
+      const db = await getConnection();
+      try {
+        // Actualizar factores en la tabla factores_emision_ano
+        await db.execute(
+          `UPDATE factores_emision_ano SET 
+            gasolina_kg_co2e_por_litro = ?,
+            diesel_kg_co2e_por_litro = ?,
+            energia_kg_co2e_por_kwh = ?,
+            r22_kg_co2e_por_kg = ?,
+            r410a_kg_co2e_por_kg = ?,
+            r134a_kg_co2e_por_kg = ?,
+            co2_extintor_kg_co2e_por_kg = ?,
+            pqs_extintor_kg_co2e_por_kg = ?,
+            residuo_relleno_kg_co2e_por_kg = ?,
+            residuo_compostado_kg_co2e_por_kg = ?,
+            residuo_peligroso_kg_co2e_por_kg = ?,
+            residuo_reciclado_kg_co2e_por_kg = ?,
+            agua_potable_kg_co2e_por_m3 = ?,
+            agua_residual_kg_co2e_por_m3 = ?
+          WHERE ano_inventario_id = ?`,
+          [
+            factores.gasolina_kg_co2e_por_litro,
+            factores.diesel_kg_co2e_por_litro,
+            factores.energia_kg_co2e_por_kwh,
+            factores.r22_kg_co2e_por_kg,
+            factores.r410a_kg_co2e_por_kg,
+            factores.r134a_kg_co2e_por_kg,
+            factores.co2_extintor_kg_co2e_por_kg,
+            factores.pqs_extintor_kg_co2e_por_kg,
+            factores.residuo_relleno_kg_co2e_por_kg,
+            factores.residuo_compostado_kg_co2e_por_kg,
+            factores.residuo_peligroso_kg_co2e_por_kg,
+            factores.residuo_reciclado_kg_co2e_por_kg,
+            factores.agua_potable_kg_co2e_por_m3,
+            factores.agua_residual_kg_co2e_por_m3,
+            ano_inventario_id,
+          ]
+        );
+
+        // Recalcular emisiones de combustibles
+        await db.execute(
+          `UPDATE consumo_combustible cc
+           JOIN factores_emision_ano fe ON cc.ano_inventario_id = fe.ano_inventario_id
+           SET cc.factor_emision = CASE 
+             WHEN cc.tipo_combustible = 'gasolina' THEN fe.gasolina_kg_co2e_por_litro
+             WHEN cc.tipo_combustible = 'diesel' THEN fe.diesel_kg_co2e_por_litro
+             ELSE cc.factor_emision
+           END,
+           cc.emision_co2e = cc.cantidad * CASE 
+             WHEN cc.tipo_combustible = 'gasolina' THEN fe.gasolina_kg_co2e_por_litro
+             WHEN cc.tipo_combustible = 'diesel' THEN fe.diesel_kg_co2e_por_litro
+             ELSE cc.factor_emision
+           END
+           WHERE cc.ano_inventario_id = ?`,
+          [ano_inventario_id]
+        );
+
+        // Recalcular emisiones de energía
+        await db.execute(
+          `UPDATE consumo_energia ce
+           JOIN factores_emision_ano fe ON ce.ano_inventario_id = fe.ano_inventario_id
+           SET ce.factor_emision = fe.energia_kg_co2e_por_kwh,
+           ce.emision_co2e = ce.cantidad_kwh * fe.energia_kg_co2e_por_kwh
+           WHERE ce.ano_inventario_id = ?`,
+          [ano_inventario_id]
+        );
+
+        // Recalcular emisiones de aires acondicionados
+        await db.execute(
+          `UPDATE inventario_aires_acond iaa
+           JOIN factores_emision_ano fe ON iaa.ano_inventario_id = fe.ano_inventario_id
+           SET iaa.factor_emision = CASE 
+             WHEN iaa.tipo_refrigerante = 'R-22' THEN fe.r22_kg_co2e_por_kg
+             WHEN iaa.tipo_refrigerante = 'R-410A' THEN fe.r410a_kg_co2e_por_kg
+             WHEN iaa.tipo_refrigerante = 'R-134a' THEN fe.r134a_kg_co2e_por_kg
+             ELSE iaa.factor_emision
+           END,
+           iaa.emision_total_co2e = iaa.capacidad_kg * CASE 
+             WHEN iaa.tipo_refrigerante = 'R-22' THEN fe.r22_kg_co2e_por_kg
+             WHEN iaa.tipo_refrigerante = 'R-410A' THEN fe.r410a_kg_co2e_por_kg
+             WHEN iaa.tipo_refrigerante = 'R-134a' THEN fe.r134a_kg_co2e_por_kg
+             ELSE iaa.factor_emision
+           END
+           WHERE iaa.ano_inventario_id = ?`,
+          [ano_inventario_id]
+        );
+
+        // Recalcular emisiones de extintores
+        await db.execute(
+          `UPDATE inventario_extintores ie
+           JOIN factores_emision_ano fe ON ie.ano_inventario_id = fe.ano_inventario_id
+           SET ie.factor_emision = CASE 
+             WHEN ie.tipo = 'CO2' THEN fe.co2_extintor_kg_co2e_por_kg
+             WHEN ie.tipo = 'PQS' THEN fe.pqs_extintor_kg_co2e_por_kg
+             ELSE ie.factor_emision
+           END,
+           ie.emision_co2e = ie.peso_kg * ie.cantidad * CASE 
+             WHEN ie.tipo = 'CO2' THEN fe.co2_extintor_kg_co2e_por_kg
+             WHEN ie.tipo = 'PQS' THEN fe.pqs_extintor_kg_co2e_por_kg
+             ELSE ie.factor_emision
+           END
+           WHERE ie.ano_inventario_id = ?`,
+          [ano_inventario_id]
+        );
+
+        // Recalcular emisiones de residuos
+        await db.execute(
+          `UPDATE residuos_solidos rs
+           JOIN factores_emision_ano fe ON rs.ano_inventario_id = fe.ano_inventario_id
+           SET rs.factor_emision = CASE 
+             WHEN rs.tipo = 'relleno' THEN fe.residuo_relleno_kg_co2e_por_kg
+             WHEN rs.tipo = 'compostado' THEN fe.residuo_compostado_kg_co2e_por_kg
+             WHEN rs.tipo = 'peligroso' THEN fe.residuo_peligroso_kg_co2e_por_kg
+             WHEN rs.tipo = 'reciclado' THEN fe.residuo_reciclado_kg_co2e_por_kg
+             ELSE rs.factor_emision
+           END,
+           rs.emision_co2e = rs.cantidad_kg * CASE 
+             WHEN rs.tipo = 'relleno' THEN fe.residuo_relleno_kg_co2e_por_kg
+             WHEN rs.tipo = 'compostado' THEN fe.residuo_compostado_kg_co2e_por_kg
+             WHEN rs.tipo = 'peligroso' THEN fe.residuo_peligroso_kg_co2e_por_kg
+             WHEN rs.tipo = 'reciclado' THEN fe.residuo_reciclado_kg_co2e_por_kg
+             ELSE rs.factor_emision
+           END
+           WHERE rs.ano_inventario_id = ?`,
+          [ano_inventario_id]
+        );
+
+        // Recalcular emisiones de agua
+        await db.execute(
+          `UPDATE consumo_agua ca
+           JOIN factores_emision_ano fe ON ca.ano_inventario_id = fe.ano_inventario_id
+           SET ca.factor_emision_potable = fe.agua_potable_kg_co2e_por_m3,
+           ca.factor_emision_residual = fe.agua_residual_kg_co2e_por_m3,
+           ca.emision_potable_co2e = ca.agua_potable_m3 * fe.agua_potable_kg_co2e_por_m3,
+           ca.emision_residual_co2e = ca.agua_residual_m3 * fe.agua_residual_kg_co2e_por_m3,
+           ca.emision_total_co2e = (ca.agua_potable_m3 * fe.agua_potable_kg_co2e_por_m3) + (ca.agua_residual_m3 * fe.agua_residual_kg_co2e_por_m3)
+           WHERE ca.ano_inventario_id = ?`,
+          [ano_inventario_id]
+        );
+
+        // Recalcular huella de carbono total
+        await recalcularHuellaCarbono(db, ano_inventario_id);
+        
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
 });
 
 // ============ FUNCIONES AUXILIARES ============
