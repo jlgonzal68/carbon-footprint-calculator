@@ -1447,6 +1447,333 @@ export const carbonRouter = router({
       }
     }),
 
+  // ============ METAS Y ALERTAS ============
+
+  createMeta: protectedProcedure
+    .input(z.object({
+      ano_inventario_id: z.number().int().positive(),
+      categoria: z.enum(['total', 'alcance_1', 'alcance_2', 'alcance_3', 'combustibles', 'energia', 'aires_acondicionados', 'extintores', 'residuos', 'agua']),
+      tipo_meta: z.enum(['reduccion_porcentual', 'valor_absoluto']),
+      valor_objetivo: z.number(),
+      valor_base: z.number().optional(),
+      ano_base: z.number().int().optional(),
+      descripcion: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [result] = await db.execute(
+          `INSERT INTO metas_reduccion (ano_inventario_id, categoria, tipo_meta, valor_objetivo, valor_base, ano_base, descripcion)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [input.ano_inventario_id, input.categoria, input.tipo_meta, input.valor_objetivo, input.valor_base || null, input.ano_base || null, input.descripcion || null]
+        );
+        await db.end();
+        return { id: (result as any).insertId };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  getMetas: protectedProcedure
+    .input(z.object({
+      ano_inventario_id: z.number().int().positive(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [metas] = await db.execute(
+          `SELECT * FROM metas_reduccion WHERE ano_inventario_id = ? ORDER BY fecha_creacion DESC`,
+          [input.ano_inventario_id]
+        );
+        await db.end();
+        return metas;
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  getProgresoMetas: protectedProcedure
+    .input(z.object({
+      ano_inventario_id: z.number().int().positive(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        // Obtener resumen de huella de carbono
+        const [resumenRows] = await db.execute(
+          `SELECT * FROM resumen_huella_carbono WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+        const resumen = (resumenRows as any[])[0];
+
+        // Obtener emisiones por categoría
+        const [combustiblesRows] = await db.execute(
+          `SELECT COALESCE(SUM(emision_co2e), 0) as total FROM consumo_combustible WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+        const [energiaRows] = await db.execute(
+          `SELECT COALESCE(SUM(emision_co2e), 0) as total FROM consumo_energia WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+        const [airesRows] = await db.execute(
+          `SELECT COALESCE(SUM(emision_total_co2e), 0) as total FROM inventario_aires_acond WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+        const [extintoresRows] = await db.execute(
+          `SELECT COALESCE(SUM(emision_co2e), 0) as total FROM inventario_extintores WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+        const [residuosRows] = await db.execute(
+          `SELECT COALESCE(SUM(emision_co2e), 0) as total FROM residuos_solidos WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+        const [aguaRows] = await db.execute(
+          `SELECT COALESCE(SUM(emision_total_co2e), 0) as total FROM consumo_agua WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+
+        const emisionesActuales: any = {
+          total: resumen?.total_co2e || 0,
+          alcance_1: resumen?.alcance_1 || 0,
+          alcance_2: resumen?.alcance_2 || 0,
+          alcance_3: resumen?.alcance_3 || 0,
+          combustibles: (combustiblesRows as any[])[0].total,
+          energia: (energiaRows as any[])[0].total,
+          aires_acondicionados: (airesRows as any[])[0].total,
+          extintores: (extintoresRows as any[])[0].total,
+          residuos: (residuosRows as any[])[0].total,
+          agua: (aguaRows as any[])[0].total,
+        };
+
+        // Obtener metas
+        const [metas] = await db.execute(
+          `SELECT * FROM metas_reduccion WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+
+        // Calcular progreso para cada meta
+        const metasConProgreso = (metas as any[]).map((meta) => {
+          const emisionActual = emisionesActuales[meta.categoria] || 0;
+          let progreso = 0;
+          let cumplida = false;
+
+          if (meta.tipo_meta === 'reduccion_porcentual' && meta.valor_base) {
+            const reduccionObjetivo = meta.valor_base * (meta.valor_objetivo / 100);
+            const valorObjetivo = meta.valor_base - reduccionObjetivo;
+            const reduccionActual = meta.valor_base - emisionActual;
+            progreso = (reduccionActual / reduccionObjetivo) * 100;
+            cumplida = emisionActual <= valorObjetivo;
+          } else if (meta.tipo_meta === 'valor_absoluto') {
+            progreso = meta.valor_objetivo > 0 ? (emisionActual / meta.valor_objetivo) * 100 : 0;
+            cumplida = emisionActual <= meta.valor_objetivo;
+          }
+
+          return {
+            ...meta,
+            emision_actual: emisionActual,
+            progreso: Math.round(progreso),
+            cumplida,
+          };
+        });
+
+        await db.end();
+        return metasConProgreso;
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  updateMeta: protectedProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+      valor_objetivo: z.number().optional(),
+      descripcion: z.string().optional(),
+      estado: z.enum(['activa', 'cumplida', 'no_cumplida', 'en_progreso']).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const updates: string[] = [];
+        const values: any[] = [];
+
+        if (input.valor_objetivo !== undefined) {
+          updates.push('valor_objetivo = ?');
+          values.push(input.valor_objetivo);
+        }
+        if (input.descripcion !== undefined) {
+          updates.push('descripcion = ?');
+          values.push(input.descripcion);
+        }
+        if (input.estado !== undefined) {
+          updates.push('estado = ?');
+          values.push(input.estado);
+        }
+
+        if (updates.length > 0) {
+          values.push(input.id);
+          await db.execute(
+            `UPDATE metas_reduccion SET ${updates.join(', ')} WHERE id = ?`,
+            values
+          );
+        }
+
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  deleteMeta: protectedProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        await db.execute('DELETE FROM metas_reduccion WHERE id = ?', [input.id]);
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  getAlertas: protectedProcedure
+    .input(z.object({
+      ano_inventario_id: z.number().int().positive(),
+      solo_no_leidas: z.boolean().optional(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        let query = 'SELECT * FROM alertas WHERE ano_inventario_id = ?';
+        const params: any[] = [input.ano_inventario_id];
+
+        if (input.solo_no_leidas) {
+          query += ' AND leida = FALSE';
+        }
+
+        query += ' ORDER BY fecha_creacion DESC';
+
+        const [alertas] = await db.execute(query, params);
+        await db.end();
+        return alertas;
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  marcarAlertaLeida: protectedProcedure
+    .input(z.object({
+      id: z.number().int().positive(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        await db.execute('UPDATE alertas SET leida = TRUE WHERE id = ?', [input.id]);
+        await db.end();
+        return { success: true };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
+  verificarMetas: protectedProcedure
+    .input(z.object({
+      ano_inventario_id: z.number().int().positive(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        // Obtener progreso de metas
+        const [metas] = await db.execute(
+          `SELECT * FROM metas_reduccion WHERE ano_inventario_id = ? AND estado = 'activa'`,
+          [input.ano_inventario_id]
+        );
+
+        // Obtener emisiones actuales (similar a getProgresoMetas)
+        const [resumenRows] = await db.execute(
+          `SELECT * FROM resumen_huella_carbono WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+        const resumen = (resumenRows as any[])[0];
+
+        const alertasCreadas = [];
+
+        for (const meta of metas as any[]) {
+          let emisionActual = 0;
+          
+          // Obtener emisión actual según categoría
+          if (meta.categoria === 'total') {
+            emisionActual = resumen?.total_co2e || 0;
+          } else if (meta.categoria.startsWith('alcance_')) {
+            emisionActual = resumen?.[meta.categoria] || 0;
+          } else {
+            // Obtener de tablas específicas
+            const tablas: any = {
+              combustibles: 'consumo_combustible',
+              energia: 'consumo_energia',
+              aires_acondicionados: 'inventario_aires_acond',
+              extintores: 'inventario_extintores',
+              residuos: 'residuos_solidos',
+              agua: 'consumo_agua',
+            };
+            const tabla = tablas[meta.categoria];
+            if (tabla) {
+              const columna = tabla.includes('inventario') ? 'emision_total_co2e' : 'emision_co2e';
+              const [rows] = await db.execute(
+                `SELECT COALESCE(SUM(${columna}), 0) as total FROM ${tabla} WHERE ano_inventario_id = ?`,
+                [input.ano_inventario_id]
+              );
+              emisionActual = (rows as any[])[0].total;
+            }
+          }
+
+          // Verificar si se superó la meta
+          let superada = false;
+          let mensaje = '';
+
+          if (meta.tipo_meta === 'reduccion_porcentual' && meta.valor_base) {
+            const reduccionObjetivo = meta.valor_base * (meta.valor_objetivo / 100);
+            const valorObjetivo = meta.valor_base - reduccionObjetivo;
+            if (emisionActual > valorObjetivo) {
+              superada = true;
+              mensaje = `La meta de reducción del ${meta.valor_objetivo}% en ${meta.categoria} fue superada. Emisión actual: ${emisionActual.toFixed(2)} kg CO2e, objetivo: ${valorObjetivo.toFixed(2)} kg CO2e.`;
+            }
+          } else if (meta.tipo_meta === 'valor_absoluto') {
+            if (emisionActual > meta.valor_objetivo) {
+              superada = true;
+              mensaje = `La meta de ${meta.valor_objetivo} kg CO2e en ${meta.categoria} fue superada. Emisión actual: ${emisionActual.toFixed(2)} kg CO2e.`;
+            }
+          }
+
+          // Crear alerta si se superó
+          if (superada) {
+            await db.execute(
+              `INSERT INTO alertas (ano_inventario_id, meta_id, tipo_alerta, categoria, mensaje, nivel)
+               VALUES (?, ?, 'meta_superada', ?, ?, 'error')`,
+              [input.ano_inventario_id, meta.id, meta.categoria, mensaje]
+            );
+            alertasCreadas.push({ categoria: meta.categoria, mensaje });
+          }
+        }
+
+        await db.end();
+        return { alertas_creadas: alertasCreadas.length, alertas: alertasCreadas };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
+
 });
 
 // ============ FUNCIONES AUXILIARES ============

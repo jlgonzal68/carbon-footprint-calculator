@@ -311,3 +311,24 @@
 - [x] Implementar importación con manejo de errores
 - [x] Agregar enlace desde pantalla de Datos
 - [x] Mostrar reporte de importación (éxitos y errores)
+
+
+## Sistema de Metas y Alertas (Nueva solicitud)
+- [x] Crear tabla de metas de reducción en base de datos
+- [x] Crear tabla de alertas en base de datos
+- [x] Crear endpoints de API para crear metas
+- [x] Crear endpoints de API para obtener metas por año
+- [x] Crear endpoints de API para actualizar metas
+- [x] Crear endpoints de API para eliminar metas
+- [x] Crear endpoint de API para calcular progreso de metas
+- [x] Crear endpoint de API para obtener alertas activas
+- [x] Crear pantalla de gestión de metas
+- [x] Implementar formulario de creación de metas
+- [x] Agregar selector de categoría y tipo de meta
+- [x] Implementar visualización de progreso con barras de progreso
+- [x] Crear tarjetas de metas con indicadores visuales
+- [x] Implementar sistema de alertas automáticas
+- [ ] Agregar notificaciones cuando se superen umbrales
+- [ ] Crear panel de alertas en Dashboard
+- [x] Implementar lógica de verificación de metas
+- [x] Agregar enlace desde Configuración
