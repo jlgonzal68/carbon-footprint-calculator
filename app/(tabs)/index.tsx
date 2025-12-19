@@ -6,6 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/hooks/use-auth';
+import { usePermissions } from '@/hooks/use-permissions';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const COLORS_ALCANCE = ['#2E7D32', '#66BB6A', '#A5D6A7'];
@@ -26,6 +27,9 @@ export default function DashboardScreen() {
 
   const { data: organizaciones } = trpc.carbon.getOrganizaciones.useQuery(undefined, { enabled: !!user });
   const organizacion = organizaciones && Array.isArray(organizaciones) && organizaciones.length > 0 ? organizaciones[0] : null;
+
+  // Hook de permisos para obtener el rol del usuario
+  const { rol, loading: loadingRol } = usePermissions((organizacion as any)?.id);
 
   const { data: anosInventario } = trpc.carbon.getAnosInventario.useQuery(
     { organizacion_id: (organizacion as any)?.id },
@@ -80,6 +84,34 @@ export default function DashboardScreen() {
 
   const totalEmisiones = resumen ? parseFloat(resumen.total_co2e || '0') : 0;
 
+  // Función para obtener el color del badge según el rol
+  const getRoleBadgeColor = (rolNombre: string) => {
+    switch (rolNombre.toLowerCase()) {
+      case 'administrador':
+        return { bg: '#1976D2', text: '#FFFFFF' }; // Azul
+      case 'editor':
+        return { bg: '#388E3C', text: '#FFFFFF' }; // Verde
+      case 'visualizador':
+        return { bg: '#757575', text: '#FFFFFF' }; // Gris
+      default:
+        return { bg: '#9E9E9E', text: '#FFFFFF' };
+    }
+  };
+
+  // Función para obtener el texto del rol en español
+  const getRoleDisplayName = (rolNombre: string) => {
+    switch (rolNombre.toLowerCase()) {
+      case 'administrador':
+        return 'Administrador';
+      case 'editor':
+        return 'Editor';
+      case 'visualizador':
+        return 'Visualizador';
+      default:
+        return rolNombre;
+    }
+  };
+
   if (!user) {
     return (
       <ScrollView
@@ -109,10 +141,13 @@ export default function DashboardScreen() {
             🌱 Dashboard
           </ThemedText>
           <ThemedText style={styles.noOrg}>
-            No tienes una organización creada. Ve a Configuración para crear una.
+            No tienes una organización configurada. Crea una en Configuración.
           </ThemedText>
-          <Pressable style={styles.actionButton} onPress={() => router.push('/organizacion' as any)}>
-            <ThemedText style={styles.actionButtonText}>Crear Organización</ThemedText>
+          <Pressable
+            style={styles.actionButton}
+            onPress={() => router.push('/management/organizacion' as any)}
+          >
+            <Text style={styles.actionButtonText}>Crear Organización</Text>
           </Pressable>
         </ThemedView>
       </ScrollView>
@@ -125,49 +160,64 @@ export default function DashboardScreen() {
       contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
     >
       <ThemedView style={styles.content}>
-        <ThemedText type="title" style={styles.title}>
-          🌱 Dashboard de Huella de Carbono
-        </ThemedText>
+        {/* Header con título y badge de rol */}
+        <View style={styles.header}>
+          <ThemedText type="title" style={styles.title}>
+            🌱 Dashboard
+          </ThemedText>
+          {rol && !loadingRol && (
+            <View style={[styles.roleBadge, { backgroundColor: getRoleBadgeColor(rol.nombre).bg }]}>
+              <Text style={[styles.roleBadgeText, { color: getRoleBadgeColor(rol.nombre).text }]}>
+                {getRoleDisplayName(rol.nombre)}
+              </Text>
+            </View>
+          )}
+        </View>
 
+        {/* Selector de Año de Inventario */}
         <ThemedView style={styles.card}>
           <ThemedText type="subtitle" style={styles.cardTitle}>
             Año de Inventario
           </ThemedText>
-          <View style={styles.anoSelector}>
-            {(anosInventario as any[])?.map((ano: any) => (
-              <Pressable
-                key={ano.id}
-                style={[
-                  styles.anoButton,
-                  selectedAno === ano.id && styles.anoButtonSelected,
-                ]}
-                onPress={() => setSelectedAno(ano.id)}
-              >
-                <Text
-                  style={[
-                    styles.anoText,
-                    selectedAno === ano.id && styles.anoTextSelected,
-                  ]}
-                >
-                  {ano.ano}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          {(!anosInventario || (anosInventario as any[]).length === 0) && (
+          {!anosInventario || anosInventario.length === 0 ? (
             <View style={styles.noDataContainer}>
               <ThemedText style={styles.noData}>
-                No hay años de inventario creados
+                No hay años de inventario. Crea uno en Configuración.
               </ThemedText>
-              <Pressable style={styles.actionButton} onPress={() => router.push('/anos-inventario' as any)}>
-                <ThemedText style={styles.actionButtonText}>Crear Año de Inventario</ThemedText>
+              <Pressable
+                style={styles.actionButton}
+                onPress={() => router.push('/management/anos-inventario' as any)}
+              >
+                <Text style={styles.actionButtonText}>Crear Año de Inventario</Text>
               </Pressable>
+            </View>
+          ) : (
+            <View style={styles.anoSelector}>
+              {anosInventario.map((ano: any) => (
+                <Pressable
+                  key={ano.id}
+                  style={[
+                    styles.anoButton,
+                    selectedAno === ano.id && styles.anoButtonSelected,
+                  ]}
+                  onPress={() => setSelectedAno(ano.id)}
+                >
+                  <Text
+                    style={[
+                      styles.anoText,
+                      selectedAno === ano.id && styles.anoTextSelected,
+                    ]}
+                  >
+                    {ano.ano}
+                  </Text>
+                </Pressable>
+              ))}
             </View>
           )}
         </ThemedView>
 
-        {/* Panel de Alertas */}
-        {selectedAno && alertas && (alertas as any[]).length > 0 && (
+        {/* Panel de Alertas (solo si hay año seleccionado y hay alertas) */}
+        {selectedAno && alertas && Array.isArray(alertas) && alertas.length > 0 && (
           <ThemedView style={styles.alertasPanel}>
             <View style={styles.alertasHeader}>
               <View style={styles.alertasHeaderLeft}>
@@ -175,210 +225,193 @@ export default function DashboardScreen() {
                   ⚠️ Alertas Activas
                 </ThemedText>
                 <View style={styles.alertasBadge}>
-                  <ThemedText style={styles.alertasBadgeText}>
-                    {(alertas as any[]).length}
-                  </ThemedText>
+                  <Text style={styles.alertasBadgeText}>{alertas.length}</Text>
                 </View>
               </View>
               <Pressable
                 style={styles.verificarButton}
                 onPress={() => verificarMetasMutation.mutate({ ano_inventario_id: selectedAno })}
-                disabled={verificarMetasMutation.isPending}
               >
-                {verificarMetasMutation.isPending ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <ThemedText style={styles.verificarButtonText}>🔄 Verificar</ThemedText>
-                )}
+                <Text style={styles.verificarButtonText}>Verificar Metas</Text>
               </Pressable>
             </View>
 
             <View style={styles.alertasList}>
-              {(alertas as any[]).slice(0, 3).map((alerta: any) => {
-                const nivelColors: Record<string, string> = {
-                  error: '#F44336',
-                  warning: '#FF9800',
-                  info: '#2196F3',
-                  success: '#4CAF50',
+              {alertas.slice(0, 3).map((alerta: any) => {
+                const prioridadColors: Record<string, { border: string; icon: string }> = {
+                  error: { border: '#F44336', icon: '🔴' },
+                  warning: { border: '#FF9800', icon: '🟠' },
+                  info: { border: '#2196F3', icon: '🔵' },
+                  success: { border: '#4CAF50', icon: '🟢' },
                 };
-                const nivelIcons: Record<string, string> = {
-                  error: '❌',
-                  warning: '⚠️',
-                  info: 'ℹ️',
-                  success: '✅',
-                };
-                const color = nivelColors[alerta.nivel] || '#757575';
-                const icon = nivelIcons[alerta.nivel] || '🔔';
+                const colors = prioridadColors[alerta.prioridad] || prioridadColors.info;
 
                 return (
-                  <Pressable
+                  <View
                     key={alerta.id}
-                    style={[styles.alertaCard, { borderLeftColor: color }]}
-                    onPress={() => marcarAlertaLeidaMutation.mutate({ id: alerta.id })}
+                    style={[styles.alertaCard, { borderLeftColor: colors.border }]}
                   >
                     <View style={styles.alertaContent}>
-                      <ThemedText style={styles.alertaIcon}>{icon}</ThemedText>
+                      <Text style={styles.alertaIcon}>{colors.icon}</Text>
                       <View style={styles.alertaTexto}>
-                        <ThemedText style={styles.alertaTipo}>
-                          {alerta.tipo_alerta.replace(/_/g, ' ').toUpperCase()}
-                        </ThemedText>
-                        <ThemedText style={styles.alertaMensaje}>
-                          {alerta.mensaje}
-                        </ThemedText>
-                        {alerta.categoria && (
-                          <ThemedText style={styles.alertaCategoria}>
-                            Categoría: {alerta.categoria}
-                          </ThemedText>
-                        )}
+                        <Text style={styles.alertaTipo}>{alerta.tipo.toUpperCase()}</Text>
+                        <Text style={styles.alertaMensaje}>{alerta.mensaje}</Text>
+                        <Text style={styles.alertaCategoria}>{alerta.categoria}</Text>
                       </View>
                     </View>
                     <Pressable
-                      onPress={() => marcarAlertaLeidaMutation.mutate({ id: alerta.id })}
                       style={styles.marcarLeidaButton}
+                      onPress={() => marcarAlertaLeidaMutation.mutate({ alerta_id: alerta.id })}
                     >
-                      <ThemedText style={styles.marcarLeidaText}>✓</ThemedText>
+                      <Text style={styles.marcarLeidaText}>✓</Text>
                     </Pressable>
-                  </Pressable>
+                  </View>
                 );
               })}
             </View>
 
-            {(alertas as any[]).length > 3 && (
+            {alertas.length > 3 && (
               <Pressable
                 style={styles.verTodasButton}
-                onPress={() => router.push('/metas' as any)}
+                onPress={() => router.push('/management/alertas' as any)}
               >
-                <ThemedText style={styles.verTodasText}>
-                  Ver todas las alertas ({(alertas as any[]).length})
-                </ThemedText>
+                <Text style={styles.verTodasText}>Ver todas las alertas ({alertas.length})</Text>
               </Pressable>
             )}
 
             <Pressable
               style={styles.gestionarMetasButton}
-              onPress={() => router.push('/metas' as any)}
+              onPress={() => router.push('/management/metas' as any)}
             >
-              <ThemedText style={styles.gestionarMetasText}>
-                🎯 Gestionar Metas
-              </ThemedText>
+              <Text style={styles.gestionarMetasText}>Gestionar Metas</Text>
             </Pressable>
           </ThemedView>
         )}
 
-        {selectedAno && (
+        {/* Contenido del Dashboard */}
+        {!selectedAno ? (
+          <ThemedView style={styles.card}>
+            <ThemedText style={styles.noData}>
+              Selecciona un año de inventario para ver el resumen de emisiones
+            </ThemedText>
+          </ThemedView>
+        ) : isLoading ? (
+          <ThemedView style={styles.card}>
+            <ActivityIndicator size="large" color="#2E7D32" />
+            <ThemedText style={styles.loadingText}>Cargando datos...</ThemedText>
+          </ThemedView>
+        ) : !resumen || totalEmisiones === 0 ? (
+          <ThemedView style={styles.card}>
+            <ThemedText style={styles.noData}>
+              No hay datos de emisiones para este año. Comienza ingresando datos en la pestaña Datos.
+            </ThemedText>
+            <Pressable
+              style={styles.actionButton}
+              onPress={() => router.push('/data' as any)}
+            >
+              <Text style={styles.actionButtonText}>Ir a Datos</Text>
+            </Pressable>
+          </ThemedView>
+        ) : (
           <>
-            {isLoading ? (
+            {/* Total de Emisiones */}
+            <View style={styles.totalCard}>
+              <Text style={styles.totalLabel}>Total de Emisiones</Text>
+              <Text style={styles.totalValue}>{totalEmisiones.toLocaleString('es-ES', { maximumFractionDigits: 2 })}</Text>
+              <Text style={styles.totalUnit}>kg CO₂e</Text>
+            </View>
+
+            {/* Gráfico de Alcances */}
+            {datosAlcance.length > 0 && (
               <ThemedView style={styles.card}>
-                <ActivityIndicator size="large" color="#2E7D32" />
-                <ThemedText style={styles.loadingText}>Cargando datos...</ThemedText>
+                <ThemedText type="subtitle" style={styles.cardTitle}>
+                  Emisiones por Alcance
+                </ThemedText>
+                <View style={styles.chartContainer}>
+                  <PieChart width={Dimensions.get('window').width - 64} height={250}>
+                    <Pie
+                      data={datosAlcance}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, value }) => `${name}: ${value.toLocaleString('es-ES', { maximumFractionDigits: 0 })}`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                    >
+                      {datosAlcance.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value: number | undefined) => `${(value ?? 0).toLocaleString('es-ES', { maximumFractionDigits: 2 })} kg CO₂e`} />
+                  </PieChart>
+                </View>
+                <View style={styles.legendContainer}>
+                  {datosAlcance.map((item, index) => (
+                    <View key={index} style={styles.legendItem}>
+                      <View style={[styles.legendColor, { backgroundColor: item.color }]} />
+                      <Text style={styles.legendText}>
+                        {item.name}: {item.value.toLocaleString('es-ES', { maximumFractionDigits: 2 })} kg CO₂e
+                      </Text>
+                    </View>
+                  ))}
+                </View>
               </ThemedView>
-            ) : (
-              <>
-                {/* Total de Emisiones */}
-                <ThemedView style={styles.totalCard}>
-                  <ThemedText style={styles.totalLabel}>Total de Emisiones</ThemedText>
-                  <ThemedText style={styles.totalValue}>
-                    {totalEmisiones.toLocaleString('es-ES', { maximumFractionDigits: 2 })}
-                  </ThemedText>
-                  <ThemedText style={styles.totalUnit}>kg CO₂e</ThemedText>
-                </ThemedView>
+            )}
 
-                {/* Gráfico de Emisiones por Alcance */}
-                {datosAlcance.length > 0 && (
-                  <ThemedView style={styles.card}>
-                    <ThemedText type="subtitle" style={styles.cardTitle}>
-                      Emisiones por Alcance
-                    </ThemedText>
-                    <View style={styles.chartContainer}>
-                      <PieChart width={Dimensions.get('window').width - 64} height={250}>
-                        <Pie
-                          data={datosAlcance}
-                          cx="50%"
-                          cy="50%"
-                          labelLine={false}
-                          label={(entry) => `${entry.name}: ${entry.value.toFixed(0)} kg`}
-                          outerRadius={80}
-                          fill="#8884d8"
-                          dataKey="value"
-                        >
-                          {datosAlcance.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                      </PieChart>
-                    </View>
-                    <View style={styles.legendContainer}>
-                      {datosAlcance.map((item, index) => (
-                        <View key={index} style={styles.legendItem}>
-                          <View style={[styles.legendColor, { backgroundColor: item.color }]} />
-                          <ThemedText style={styles.legendText}>
-                            {item.name}: {item.value.toLocaleString('es-ES', { maximumFractionDigits: 2 })} kg CO₂e
-                          </ThemedText>
-                        </View>
+            {/* Gráfico de Campus */}
+            {datosCampus.length > 0 && (
+              <ThemedView style={styles.card}>
+                <ThemedText type="subtitle" style={styles.cardTitle}>
+                  Emisiones por Campus
+                </ThemedText>
+                <View style={styles.chartContainer}>
+                  <BarChart
+                    width={Dimensions.get('window').width - 64}
+                    height={300}
+                    data={datosCampus}
+                    margin={{ top: 20, right: 20, bottom: 60, left: 20 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="name" 
+                      angle={-45}
+                      textAnchor="end"
+                      height={80}
+                    />
+                    <YAxis />
+                    <Tooltip formatter={(value: number | undefined) => `${(value ?? 0).toLocaleString('es-ES', { maximumFractionDigits: 2 })} kg CO₂e`} />
+                    <Bar dataKey="total" fill="#2E7D32">
+                      {datosCampus.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
-                    </View>
-                  </ThemedView>
-                )}
+                    </Bar>
+                  </BarChart>
+                </View>
+              </ThemedView>
+            )}
 
-                {/* Gráfico de Emisiones por Campus */}
-                {datosCampus.length > 0 && (
-                  <ThemedView style={styles.card}>
-                    <ThemedText type="subtitle" style={styles.cardTitle}>
-                      Emisiones por Campus
-                    </ThemedText>
-                    <View style={styles.chartContainer}>
-                      <BarChart
-                        width={Dimensions.get('window').width - 64}
-                        height={250}
-                        data={datosCampus}
-                        margin={{ top: 5, right: 20, left: 0, bottom: 5 }}
-                      >
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} />
-                        <YAxis />
-                        <Tooltip />
-                        <Bar dataKey="total" fill="#2E7D32">
-                          {datosCampus.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Bar>
-                      </BarChart>
+            {/* Tabla de Categorías */}
+            {datosCategoria.length > 0 && (
+              <ThemedView style={styles.card}>
+                <ThemedText type="subtitle" style={styles.cardTitle}>
+                  Emisiones por Categoría
+                </ThemedText>
+                <View style={styles.table}>
+                  <View style={styles.tableHeader}>
+                    <Text style={styles.tableHeaderText}>Categoría</Text>
+                    <Text style={styles.tableHeaderText}>Emisión (kg CO₂e)</Text>
+                  </View>
+                  {datosCategoria.map((item, index) => (
+                    <View key={index} style={styles.tableRow}>
+                      <Text style={styles.tableCellCategory}>{item.categoria}</Text>
+                      <Text style={styles.tableCellValue}>
+                        {item.emision.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Text>
                     </View>
-                  </ThemedView>
-                )}
-
-                {/* Tabla de Emisiones por Categoría */}
-                {datosCategoria.length > 0 && (
-                  <ThemedView style={styles.card}>
-                    <ThemedText type="subtitle" style={styles.cardTitle}>
-                      Emisiones por Categoría
-                    </ThemedText>
-                    <View style={styles.table}>
-                      <View style={styles.tableHeader}>
-                        <ThemedText style={styles.tableHeaderText}>Categoría</ThemedText>
-                        <ThemedText style={styles.tableHeaderText}>Emisión (kg CO₂e)</ThemedText>
-                      </View>
-                      {datosCategoria.map((item, index) => (
-                        <View key={index} style={styles.tableRow}>
-                          <ThemedText style={styles.tableCellCategory}>{item.categoria}</ThemedText>
-                          <ThemedText style={styles.tableCellValue}>
-                            {item.emision.toLocaleString('es-ES', { maximumFractionDigits: 2 })}
-                          </ThemedText>
-                        </View>
-                      ))}
-                    </View>
-                  </ThemedView>
-                )}
-
-                {totalEmisiones === 0 && (
-                  <ThemedView style={styles.card}>
-                    <ThemedText style={styles.noData}>
-                      No hay datos de emisiones para este año. Comienza ingresando datos en la pestaña "Datos".
-                    </ThemedText>
-                  </ThemedView>
-                )}
-              </>
+                  ))}
+                </View>
+              </ThemedView>
             )}
           </>
         )}
@@ -395,8 +428,30 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 16,
   },
-  title: {
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
+  },
+  title: {
+    marginBottom: 0,
+  },
+  roleBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  roleBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   noAuth: {
     textAlign: 'center',

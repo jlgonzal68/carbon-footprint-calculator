@@ -390,3 +390,9 @@
 - [x] Implementar control de acceso en pantalla de usuarios
 - [ ] Implementar control de acceso en pantalla de organizaciones
 - [ ] Implementar control de acceso en pantalla de años de inventario
+
+## Indicador Visual de Rol en Dashboard (Nueva solicitud)
+- [x] Agregar badge de rol del usuario en el encabezado del Dashboard
+- [x] Mostrar rol con colores diferenciados (Administrador: azul, Editor: verde, Visualizador: gris)
+- [x] Integrar hook usePermissions para obtener información del rol
+- [x] Diseñar badge con sombra y estilo destacado
