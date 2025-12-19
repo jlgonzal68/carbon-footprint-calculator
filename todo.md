@@ -246,3 +246,9 @@
 - [ ] Agregar botones de editar y eliminar en formulario de extintores
 - [ ] Agregar botones de editar y eliminar en formulario de residuos
 - [ ] Agregar botones de editar y eliminar en formulario de agua
+
+
+## Aplicar Edición/Eliminación a Formularios Restantes (Nueva solicitud)
+- [x] Actualizar formulario de energía con edición y eliminación
+- [x] Actualizar formulario de aires acondicionados con edición y eliminación
+- [x] Actualizar formulario de extintores con edición y eliminación

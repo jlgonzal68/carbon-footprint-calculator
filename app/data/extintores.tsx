@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { ConfirmModal } from '@/components/confirm-modal';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -27,6 +28,9 @@ export default function ExtintoresScreen() {
   const [pesoKg, setPesoKg] = useState('');
   const [cantidad, setCantidad] = useState('');
   const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<number | null>(null);
 
   const { data: organizaciones } = trpc.carbon.getOrganizaciones.useQuery(undefined, { enabled: !!user });
   const organizacion = organizaciones && Array.isArray(organizaciones) && organizaciones.length > 0 ? organizaciones[0] : null;
@@ -44,10 +48,7 @@ export default function ExtintoresScreen() {
   const createExtintorMutation = trpc.carbon.createExtintor.useMutation({
     onSuccess: () => {
       Alert.alert('Éxito', 'Extintor registrado correctamente');
-      setTipoExtintor('');
-      setPesoKg('');
-      setCantidad('');
-      setSelectedCampus(null);
+      resetForm();
       refetch();
       setLoading(false);
     },
@@ -56,6 +57,60 @@ export default function ExtintoresScreen() {
       setLoading(false);
     },
   });
+
+  const updateExtintorMutation = trpc.carbon.updateExtintor.useMutation({
+    onSuccess: () => {
+      Alert.alert('Éxito', 'Extintor actualizado correctamente');
+      resetForm();
+      refetch();
+      setLoading(false);
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.message);
+      setLoading(false);
+    },
+  });
+
+  const deleteExtintorMutation = trpc.carbon.deleteExtintor.useMutation({
+    onSuccess: () => {
+      Alert.alert('Éxito', 'Extintor eliminado correctamente');
+      refetch();
+      setDeleteModalVisible(false);
+      setItemToDelete(null);
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.message);
+      setDeleteModalVisible(false);
+      setItemToDelete(null);
+    },
+  });
+
+  const resetForm = () => {
+    setTipoExtintor('');
+    setPesoKg('');
+    setCantidad('');
+    setSelectedCampus(null);
+    setEditingId(null);
+  };
+
+  const handleEdit = (item: any) => {
+    setEditingId(item.id);
+    setSelectedCampus(item.campus_id);
+    setTipoExtintor(item.tipo);
+    setPesoKg(item.peso_kg.toString());
+    setCantidad(item.cantidad.toString());
+  };
+
+  const handleDelete = (id: number) => {
+    setItemToDelete(id);
+    setDeleteModalVisible(true);
+  };
+
+  const confirmDelete = () => {
+    if (itemToDelete) {
+      deleteExtintorMutation.mutate({ id: itemToDelete });
+    }
+  };
 
   const handleSubmit = () => {
     if (!selectedAno) {
@@ -69,35 +124,46 @@ export default function ExtintoresScreen() {
     }
 
     if (!tipoExtintor) {
-      Alert.alert('Error', 'Selecciona el tipo de extintor');
+      Alert.alert('Error', 'Selecciona un tipo de extintor');
       return;
     }
 
     const peso = parseFloat(pesoKg);
+    const cant = parseInt(cantidad);
+
     if (!pesoKg || isNaN(peso) || peso <= 0) {
       Alert.alert('Error', 'Ingresa un peso válido en kg');
       return;
     }
 
-    const cant = parseInt(cantidad);
     if (!cantidad || isNaN(cant) || cant <= 0) {
-      Alert.alert('Error', 'Ingresa una cantidad válida de extintores');
+      Alert.alert('Error', 'Ingresa una cantidad válida');
       return;
     }
 
     setLoading(true);
-    createExtintorMutation.mutate({
-      ano_inventario_id: selectedAno,
-      campus_id: selectedCampus,
-      tipo: tipoExtintor,
-      peso_kg: peso,
-      cantidad: cant,
-    });
+    if (editingId) {
+      updateExtintorMutation.mutate({
+        id: editingId,
+        peso_kg: peso,
+        cantidad: cant,
+      });
+    } else {
+      createExtintorMutation.mutate({
+        ano_inventario_id: selectedAno,
+        campus_id: selectedCampus,
+        tipo: tipoExtintor as 'CO2' | 'PQS' | 'Solkaflam',
+        peso_kg: peso,
+        cantidad: cant,
+      });
+    }
   };
 
-  const getCampusNombre = (campusId: number) => {
-    const campus = CAMPUS.find(c => c.id === campusId);
-    return campus ? campus.nombre : 'Desconocido';
+  const calcularEmisionEstimada = () => {
+    const peso = parseFloat(pesoKg);
+    const cant = parseInt(cantidad);
+    if (isNaN(peso) || isNaN(cant) || peso <= 0 || cant <= 0) return 0;
+    return (peso * cant * 0.001).toFixed(3);
   };
 
   if (!organizacion) {
@@ -110,11 +176,11 @@ export default function ExtintoresScreen() {
           <ThemedText type="title" style={styles.title}>
             Extintores
           </ThemedText>
-          <ThemedText style={styles.description}>
-            Primero debes crear una organización.
+          <ThemedText style={styles.noOrg}>
+            No tienes una organización creada. Ve a Configuración para crear una.
           </ThemedText>
-          <Pressable style={styles.primaryButton} onPress={() => router.push('/organizacion')}>
-            <Text style={styles.primaryButtonText}>Crear Organización</Text>
+          <Pressable style={styles.backButton} onPress={() => router.back()}>
+            <ThemedText style={styles.backText}>← Volver</ThemedText>
           </Pressable>
         </ThemedView>
       </ScrollView>
@@ -122,190 +188,208 @@ export default function ExtintoresScreen() {
   }
 
   return (
-    <ScrollView
-      style={[styles.container, { paddingTop: insets.top }]}
-      contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
-    >
-      <ThemedView style={styles.content}>
-        <ThemedText type="title" style={styles.title}>
-          🧯 Extintores
-        </ThemedText>
+    <>
+      <ScrollView
+        style={[styles.container, { paddingTop: insets.top }]}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+      >
+        <ThemedView style={styles.content}>
+          <Pressable style={styles.backButton} onPress={() => router.back()}>
+            <ThemedText style={styles.backText}>← Volver</ThemedText>
+          </Pressable>
 
-        <ThemedText style={styles.description}>
-          Registra el inventario de extintores por campus
-        </ThemedText>
-
-        {/* Selector de Año */}
-        <ThemedView style={styles.section}>
-          <ThemedText type="subtitle" style={styles.label}>
-            Año de Inventario *
+          <ThemedText type="title" style={styles.title}>
+            🧯 Extintores
           </ThemedText>
-          <View style={styles.yearSelector}>
-            {anosInventario && Array.isArray(anosInventario) && anosInventario.map((ano: any) => (
-              <Pressable
-                key={ano.id}
-                style={[
-                  styles.yearButton,
-                  selectedAno === ano.id && styles.yearButtonSelected,
-                ]}
-                onPress={() => setSelectedAno(ano.id)}
-              >
-                <Text
+
+          <ThemedView style={styles.card}>
+            <ThemedText type="subtitle" style={styles.cardTitle}>
+              Año de Inventario
+            </ThemedText>
+            <View style={styles.anoSelector}>
+              {(anosInventario as any[])?.map((ano: any) => (
+                <Pressable
+                  key={ano.id}
                   style={[
-                    styles.yearButtonText,
-                    selectedAno === ano.id && styles.yearButtonTextSelected,
+                    styles.anoButton,
+                    selectedAno === ano.id && styles.anoButtonSelected,
                   ]}
+                  onPress={() => setSelectedAno(ano.id)}
                 >
-                  {ano.ano}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </ThemedView>
-
-        {selectedAno && (
-          <>
-            {/* Formulario */}
-            <ThemedView style={styles.form}>
-              <ThemedText type="subtitle" style={styles.formTitle}>
-                Nuevo Extintor
-              </ThemedText>
-
-              <ThemedText style={styles.label}>
-                Campus *
-              </ThemedText>
-              <View style={styles.campusGrid}>
-                {CAMPUS.map((campus) => (
-                  <Pressable
-                    key={campus.id}
+                  <Text
                     style={[
-                      styles.campusButton,
-                      selectedCampus === campus.id && styles.campusButtonSelected,
+                      styles.anoText,
+                      selectedAno === ano.id && styles.anoTextSelected,
                     ]}
-                    onPress={() => setSelectedCampus(campus.id)}
                   >
-                    <Text
-                      style={[
-                        styles.campusButtonText,
-                        selectedCampus === campus.id && styles.campusButtonTextSelected,
-                      ]}
-                    >
-                      {campus.nombre}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+                    {ano.ano}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </ThemedView>
 
-              <ThemedText style={[styles.label, { marginTop: 16 }]}>
-                Tipo de Extintor *
-              </ThemedText>
-              <View style={styles.tipoGrid}>
-                {TIPOS_EXTINTOR.map((tipo) => (
-                  <Pressable
-                    key={tipo}
-                    style={[
-                      styles.tipoButton,
-                      tipoExtintor === tipo && styles.tipoButtonSelected,
-                    ]}
-                    onPress={() => setTipoExtintor(tipo)}
-                  >
-                    <Text
-                      style={[
-                        styles.tipoButtonText,
-                        tipoExtintor === tipo && styles.tipoButtonTextSelected,
-                      ]}
-                    >
-                      {tipo}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-
-              <View style={styles.row}>
-                <View style={styles.halfWidth}>
-                  <ThemedText style={styles.label}>
-                    Peso (kg) *
-                  </ThemedText>
-                  <TextInput
-                    style={styles.input}
-                    value={pesoKg}
-                    onChangeText={setPesoKg}
-                    placeholder="Ej: 5"
-                    keyboardType="numeric"
-                    placeholderTextColor="#999"
-                  />
-                </View>
-
-                <View style={styles.halfWidth}>
-                  <ThemedText style={styles.label}>
-                    Cantidad *
-                  </ThemedText>
-                  <TextInput
-                    style={styles.input}
-                    value={cantidad}
-                    onChangeText={setCantidad}
-                    placeholder="Ej: 10"
-                    keyboardType="numeric"
-                    placeholderTextColor="#999"
-                  />
-                </View>
-              </View>
-
-              <Pressable
-                style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-                onPress={handleSubmit}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={styles.submitButtonText}>Guardar Extintor</Text>
-                )}
-              </Pressable>
-            </ThemedView>
-
-            {/* Lista de Registros */}
-            {extintores && Array.isArray(extintores) && extintores.length > 0 && (
-              <ThemedView style={styles.listSection}>
-                <ThemedText type="subtitle" style={styles.listTitle}>
-                  Inventario Registrado ({extintores.length} tipos)
+          {selectedAno && (
+            <>
+              <ThemedView style={styles.card}>
+                <ThemedText type="subtitle" style={styles.cardTitle}>
+                  {editingId ? 'Editar Registro' : 'Nuevo Registro'}
                 </ThemedText>
-                {extintores.map((item: any) => (
-                  <ThemedView key={item.id} style={styles.listItem}>
-                    <View style={styles.listItemHeader}>
-                      <ThemedText style={styles.listItemTitle}>
-                        🧯 {item.tipo_extintor}
-                      </ThemedText>
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>x{item.cantidad}</Text>
-                      </View>
-                    </View>
-                    <ThemedText style={styles.listItemDetail}>
-                      📍 Campus: {item.campus_nombre || getCampusNombre(item.campus_id)}
-                    </ThemedText>
-                    <ThemedText style={styles.listItemDetail}>
-                      ⚖️ Peso unitario: {item.peso_kg} kg
-                    </ThemedText>
-                    <ThemedText style={styles.listItemDetail}>
-                      📦 Peso total: {(item.peso_kg * item.cantidad).toFixed(2)} kg
-                    </ThemedText>
-                    {item.emision_co2e && (
-                      <ThemedText style={styles.listItemEmission}>
-                        💨 Emisión: {item.emision_co2e.toFixed(2)} kg CO₂e
-                      </ThemedText>
-                    )}
-                  </ThemedView>
-                ))}
-              </ThemedView>
-            )}
-          </>
-        )}
 
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>Volver</Text>
-        </Pressable>
-      </ThemedView>
-    </ScrollView>
+                <ThemedText style={styles.label}>Campus *</ThemedText>
+                <View style={styles.campusGrid}>
+                  {CAMPUS.map((campus) => (
+                    <Pressable
+                      key={campus.id}
+                      style={[
+                        styles.campusButton,
+                        selectedCampus === campus.id && styles.campusButtonSelected,
+                      ]}
+                      onPress={() => setSelectedCampus(campus.id)}
+                      disabled={!!editingId}
+                    >
+                      <Text
+                        style={[
+                          styles.campusButtonText,
+                          selectedCampus === campus.id && styles.campusButtonTextSelected,
+                        ]}
+                      >
+                        {campus.nombre}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <ThemedText style={styles.label}>Tipo de Extintor *</ThemedText>
+                <View style={styles.tipoGrid}>
+                  {TIPOS_EXTINTOR.map((tipo) => (
+                    <Pressable
+                      key={tipo}
+                      style={[
+                        styles.tipoButton,
+                        tipoExtintor === tipo && styles.tipoButtonSelected,
+                      ]}
+                      onPress={() => setTipoExtintor(tipo)}
+                      disabled={!!editingId}
+                    >
+                      <Text
+                        style={[
+                          styles.tipoButtonText,
+                          tipoExtintor === tipo && styles.tipoButtonTextSelected,
+                        ]}
+                      >
+                        {tipo}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+
+                <ThemedText style={styles.label}>Peso (kg) *</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  value={pesoKg}
+                  onChangeText={setPesoKg}
+                  keyboardType="numeric"
+                  placeholder="Ej: 5"
+                  placeholderTextColor="#999"
+                />
+
+                <ThemedText style={styles.label}>Cantidad *</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  value={cantidad}
+                  onChangeText={setCantidad}
+                  keyboardType="numeric"
+                  placeholder="Ej: 20"
+                  placeholderTextColor="#999"
+                />
+
+                {pesoKg && cantidad && (
+                  <ThemedText style={styles.emisionPreview}>
+                    Emisión estimada: {calcularEmisionEstimada()} kg CO₂e
+                  </ThemedText>
+                )}
+
+                <Pressable
+                  style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+                  onPress={handleSubmit}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <ThemedText style={styles.submitText}>
+                      {editingId ? 'Actualizar' : 'Guardar Registro'}
+                    </ThemedText>
+                  )}
+                </Pressable>
+
+                {editingId && (
+                  <Pressable style={styles.cancelButton} onPress={resetForm}>
+                    <ThemedText style={styles.cancelText}>Cancelar Edición</ThemedText>
+                  </Pressable>
+                )}
+              </ThemedView>
+
+              <ThemedView style={styles.card}>
+                <ThemedText type="subtitle" style={styles.cardTitle}>
+                  Registros Guardados
+                </ThemedText>
+                {(extintores as any[])?.length === 0 ? (
+                  <ThemedText style={styles.noData}>
+                    No hay registros de extintores para este año
+                  </ThemedText>
+                ) : (
+                  (extintores as any[])?.map((item: any) => (
+                    <ThemedView key={item.id} style={styles.listItem}>
+                      <View style={styles.listItemContent}>
+                        <ThemedText type="defaultSemiBold">
+                          {item.tipo} - {item.campus_nombre}
+                        </ThemedText>
+                        <ThemedText style={styles.listItemDetail}>
+                          Peso: {item.peso_kg} kg | Cantidad: {item.cantidad}
+                        </ThemedText>
+                        <ThemedText style={styles.listItemDetail}>
+                          Emisión: {item.emision_total_co2e.toFixed(3)} kg CO₂e
+                        </ThemedText>
+                      </View>
+                      <View style={styles.listItemActions}>
+                        <Pressable
+                          style={styles.editButton}
+                          onPress={() => handleEdit(item)}
+                        >
+                          <ThemedText style={styles.editButtonText}>✏️</ThemedText>
+                        </Pressable>
+                        <Pressable
+                          style={styles.deleteButton}
+                          onPress={() => handleDelete(item.id)}
+                        >
+                          <ThemedText style={styles.deleteButtonText}>🗑️</ThemedText>
+                        </Pressable>
+                      </View>
+                    </ThemedView>
+                  ))
+                )}
+              </ThemedView>
+            </>
+          )}
+        </ThemedView>
+      </ScrollView>
+
+      <ConfirmModal
+        visible={deleteModalVisible}
+        title="Confirmar Eliminación"
+        message="¿Estás seguro de que deseas eliminar este registro? Esta acción no se puede deshacer."
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        danger
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setDeleteModalVisible(false);
+          setItemToDelete(null);
+        }}
+      />
+    </>
   );
 }
 
@@ -314,62 +398,58 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 20,
+    padding: 16,
+    gap: 16,
   },
-  title: {
-    marginBottom: 16,
+  backButton: {
+    paddingVertical: 8,
+  },
+  backText: {
+    fontSize: 16,
     color: '#2E7D32',
   },
-  description: {
-    fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 24,
-    color: '#666',
+  title: {
+    marginBottom: 8,
   },
-  section: {
-    marginBottom: 24,
+  noOrg: {
+    textAlign: 'center',
+    marginVertical: 20,
+  },
+  card: {
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
+    gap: 12,
+  },
+  cardTitle: {
+    marginBottom: 8,
+  },
+  anoSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  anoButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#E0E0E0',
+  },
+  anoButtonSelected: {
+    backgroundColor: '#2E7D32',
+  },
+  anoText: {
+    fontSize: 16,
+    color: '#424242',
+  },
+  anoTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   label: {
     fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 8,
     fontWeight: '600',
-    color: '#333',
-  },
-  yearSelector: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  yearButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
-  },
-  yearButtonSelected: {
-    borderColor: '#2E7D32',
-    backgroundColor: '#E8F5E9',
-  },
-  yearButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#666',
-  },
-  yearButtonTextSelected: {
-    color: '#2E7D32',
-  },
-  form: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
-  },
-  formTitle: {
-    marginBottom: 16,
-    color: '#2E7D32',
+    marginTop: 8,
   },
   campusGrid: {
     flexDirection: 'row',
@@ -380,21 +460,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
+    backgroundColor: '#E0E0E0',
   },
   campusButtonSelected: {
-    borderColor: '#D32F2F',
-    backgroundColor: '#FFEBEE',
+    backgroundColor: '#D32F2F',
   },
   campusButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#666',
+    color: '#424242',
   },
   campusButtonTextSelected: {
-    color: '#B71C1C',
+    color: '#FFFFFF',
   },
   tipoGrid: {
     flexDirection: 'row',
@@ -402,126 +479,101 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   tipoButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#E0E0E0',
   },
   tipoButtonSelected: {
-    borderColor: '#D32F2F',
-    backgroundColor: '#FFEBEE',
+    backgroundColor: '#F57C00',
   },
   tipoButtonText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#666',
+    color: '#424242',
   },
   tipoButtonTextSelected: {
-    color: '#B71C1C',
+    color: '#FFFFFF',
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
+    backgroundColor: '#FFFFFF',
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#CCCCCC',
   },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 16,
-  },
-  halfWidth: {
-    flex: 1,
+  emisionPreview: {
+    fontSize: 14,
+    color: '#2E7D32',
+    fontStyle: 'italic',
   },
   submitButton: {
     backgroundColor: '#2E7D32',
-    padding: 14,
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 8,
   },
   submitButtonDisabled: {
     opacity: 0.6,
   },
-  submitButtonText: {
-    color: '#fff',
+  submitText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  listSection: {
-    marginBottom: 24,
+  cancelButton: {
+    backgroundColor: '#E0E0E0',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
   },
-  listTitle: {
-    marginBottom: 16,
-    color: '#2E7D32',
+  cancelText: {
+    color: '#424242',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  noData: {
+    textAlign: 'center',
+    fontStyle: 'italic',
+    color: '#757575',
   },
   listItem: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  listItemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
     marginBottom: 8,
   },
-  listItemTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  badge: {
-    backgroundColor: '#D32F2F',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
+  listItemContent: {
+    flex: 1,
+    gap: 4,
   },
   listItemDetail: {
     fontSize: 14,
-    lineHeight: 22,
-    color: '#666',
-    marginTop: 4,
+    color: '#757575',
   },
-  listItemEmission: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: '#2E7D32',
-    fontWeight: '600',
-    marginTop: 8,
+  listItemActions: {
+    flexDirection: 'row',
+    gap: 8,
   },
-  primaryButton: {
-    backgroundColor: '#2E7D32',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
+  editButton: {
+    padding: 8,
+    backgroundColor: '#FFF3E0',
+    borderRadius: 6,
   },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  editButtonText: {
+    fontSize: 18,
   },
-  backButton: {
-    backgroundColor: '#666',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
+  deleteButton: {
+    padding: 8,
+    backgroundColor: '#FFEBEE',
+    borderRadius: 6,
   },
-  backButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  deleteButtonText: {
+    fontSize: 18,
   },
 });

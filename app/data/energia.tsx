@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { ConfirmModal } from '@/components/confirm-modal';
 import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -23,6 +24,9 @@ export default function EnergiaScreen() {
   const [selectedCampus, setSelectedCampus] = useState<number | null>(null);
   const [consumoKwh, setConsumoKwh] = useState('');
   const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<number | null>(null);
 
   const { data: organizaciones } = trpc.carbon.getOrganizaciones.useQuery(undefined, { enabled: !!user });
   const organizacion = organizaciones && Array.isArray(organizaciones) && organizaciones.length > 0 ? organizaciones[0] : null;
@@ -37,11 +41,12 @@ export default function EnergiaScreen() {
     { enabled: !!selectedAno }
   );
 
-  const createEnergiaM = trpc.carbon.createConsumoEnergia.useMutation({
+  const createEnergiaMutation = trpc.carbon.createConsumoEnergia.useMutation({
     onSuccess: () => {
       Alert.alert('Éxito', 'Consumo de energía registrado correctamente');
       setConsumoKwh('');
       setSelectedCampus(null);
+      setEditingId(null);
       refetch();
       setLoading(false);
     },
@@ -50,6 +55,52 @@ export default function EnergiaScreen() {
       setLoading(false);
     },
   });
+
+  const updateEnergiaMutation = trpc.carbon.updateEnergia.useMutation({
+    onSuccess: () => {
+      Alert.alert('Éxito', 'Consumo de energía actualizado correctamente');
+      setConsumoKwh('');
+      setSelectedCampus(null);
+      setEditingId(null);
+      refetch();
+      setLoading(false);
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.message);
+      setLoading(false);
+    },
+  });
+
+  const deleteEnergiaMutation = trpc.carbon.deleteEnergia.useMutation({
+    onSuccess: () => {
+      Alert.alert('Éxito', 'Consumo de energía eliminado correctamente');
+      refetch();
+      setDeleteModalVisible(false);
+      setItemToDelete(null);
+    },
+    onError: (error: any) => {
+      Alert.alert('Error', error.message);
+      setDeleteModalVisible(false);
+      setItemToDelete(null);
+    },
+  });
+
+  const handleEdit = (item: any) => {
+    setEditingId(item.id);
+    setSelectedCampus(item.campus_id);
+    setConsumoKwh(item.cantidad_kwh.toString());
+  };
+
+  const handleDelete = (id: number) => {
+    setItemToDelete(id);
+    setDeleteModalVisible(true);
+  };
+
+  const confirmDelete = () => {
+    if (itemToDelete) {
+      deleteEnergiaMutation.mutate({ id: itemToDelete });
+    }
+  };
 
   const handleSubmit = () => {
     if (!selectedAno) {
@@ -69,26 +120,25 @@ export default function EnergiaScreen() {
     }
 
     setLoading(true);
-    createEnergiaM.mutate({
-      ano_inventario_id: selectedAno,
-      campus_id: selectedCampus,
-      cantidad_kwh: consumo,
-    });
+    if (editingId) {
+      updateEnergiaMutation.mutate({
+        id: editingId,
+        cantidad_kwh: consumo,
+      });
+    } else {
+      createEnergiaMutation.mutate({
+        ano_inventario_id: selectedAno,
+        campus_id: selectedCampus,
+        cantidad_kwh: consumo,
+      });
+    }
   };
 
   const calcularEmisionEstimada = (kwh: string) => {
     const consumo = parseFloat(kwh);
     if (isNaN(consumo) || consumo <= 0) return 0;
-    
-    // Factor de emisión aproximado para Colombia (kg CO2e por kWh)
-    const factor = 0.164;
-    
+    const factor = 0.18;
     return (consumo * factor).toFixed(2);
-  };
-
-  const getCampusNombre = (campusId: number) => {
-    const campus = CAMPUS.find(c => c.id === campusId);
-    return campus ? campus.nombre : 'Desconocido';
   };
 
   if (!organizacion) {
@@ -101,11 +151,11 @@ export default function EnergiaScreen() {
           <ThemedText type="title" style={styles.title}>
             Energía Eléctrica
           </ThemedText>
-          <ThemedText style={styles.description}>
-            Primero debes crear una organización.
+          <ThemedText style={styles.noOrg}>
+            No tienes una organización creada. Ve a Configuración para crear una.
           </ThemedText>
-          <Pressable style={styles.primaryButton} onPress={() => router.push('/organizacion')}>
-            <Text style={styles.primaryButtonText}>Crear Organización</Text>
+          <Pressable style={styles.backButton} onPress={() => router.back()}>
+            <ThemedText style={styles.backText}>← Volver</ThemedText>
           </Pressable>
         </ThemedView>
       </ScrollView>
@@ -113,150 +163,180 @@ export default function EnergiaScreen() {
   }
 
   return (
-    <ScrollView
-      style={[styles.container, { paddingTop: insets.top }]}
-      contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
-    >
-      <ThemedView style={styles.content}>
-        <ThemedText type="title" style={styles.title}>
-          ⚡ Energía Eléctrica
-        </ThemedText>
+    <>
+      <ScrollView
+        style={[styles.container, { paddingTop: insets.top }]}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+      >
+        <ThemedView style={styles.content}>
+          <Pressable style={styles.backButton} onPress={() => router.back()}>
+            <ThemedText style={styles.backText}>← Volver</ThemedText>
+          </Pressable>
 
-        <ThemedText style={styles.description}>
-          Registra el consumo de energía eléctrica por campus
-        </ThemedText>
-
-        {/* Selector de Año */}
-        <ThemedView style={styles.section}>
-          <ThemedText type="subtitle" style={styles.label}>
-            Año de Inventario *
+          <ThemedText type="title" style={styles.title}>
+            ⚡ Energía Eléctrica
           </ThemedText>
-          <View style={styles.yearSelector}>
-            {anosInventario && Array.isArray(anosInventario) && anosInventario.map((ano: any) => (
-              <Pressable
-                key={ano.id}
-                style={[
-                  styles.yearButton,
-                  selectedAno === ano.id && styles.yearButtonSelected,
-                ]}
-                onPress={() => setSelectedAno(ano.id)}
-              >
-                <Text
+
+          <ThemedView style={styles.card}>
+            <ThemedText type="subtitle" style={styles.cardTitle}>
+              Año de Inventario
+            </ThemedText>
+            <View style={styles.anoSelector}>
+              {(anosInventario as any[])?.map((ano: any) => (
+                <Pressable
+                  key={ano.id}
                   style={[
-                    styles.yearButtonText,
-                    selectedAno === ano.id && styles.yearButtonTextSelected,
+                    styles.anoButton,
+                    selectedAno === ano.id && styles.anoButtonSelected,
                   ]}
+                  onPress={() => setSelectedAno(ano.id)}
                 >
-                  {ano.ano}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </ThemedView>
-
-        {selectedAno && (
-          <>
-            {/* Formulario */}
-            <ThemedView style={styles.form}>
-              <ThemedText type="subtitle" style={styles.formTitle}>
-                Nuevo Registro
-              </ThemedText>
-
-              <ThemedText style={styles.label}>
-                Campus *
-              </ThemedText>
-              <View style={styles.campusGrid}>
-                {CAMPUS.map((campus) => (
-                  <Pressable
-                    key={campus.id}
+                  <Text
                     style={[
-                      styles.campusButton,
-                      selectedCampus === campus.id && styles.campusButtonSelected,
+                      styles.anoText,
+                      selectedAno === ano.id && styles.anoTextSelected,
                     ]}
-                    onPress={() => setSelectedCampus(campus.id)}
                   >
-                    <Text
+                    {ano.ano}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </ThemedView>
+
+          {selectedAno && (
+            <>
+              <ThemedView style={styles.card}>
+                <ThemedText type="subtitle" style={styles.cardTitle}>
+                  {editingId ? 'Editar Registro' : 'Nuevo Registro'}
+                </ThemedText>
+
+                <ThemedText style={styles.label}>Campus *</ThemedText>
+                <View style={styles.campusGrid}>
+                  {CAMPUS.map((campus) => (
+                    <Pressable
+                      key={campus.id}
                       style={[
-                        styles.campusButtonText,
-                        selectedCampus === campus.id && styles.campusButtonTextSelected,
+                        styles.campusButton,
+                        selectedCampus === campus.id && styles.campusButtonSelected,
                       ]}
+                      onPress={() => setSelectedCampus(campus.id)}
+                      disabled={!!editingId}
                     >
-                      {campus.nombre}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
+                      <Text
+                        style={[
+                          styles.campusButtonText,
+                          selectedCampus === campus.id && styles.campusButtonTextSelected,
+                        ]}
+                      >
+                        {campus.nombre}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
 
-              <ThemedText style={[styles.label, { marginTop: 16 }]}>
-                Consumo (kWh) *
-              </ThemedText>
-              <TextInput
-                style={styles.input}
-                value={consumoKwh}
-                onChangeText={setConsumoKwh}
-                placeholder="Ej: 50000"
-                keyboardType="numeric"
-                placeholderTextColor="#999"
-              />
-
-              {consumoKwh && parseFloat(consumoKwh) > 0 && (
-                <ThemedView style={styles.emissionPreview}>
-                  <ThemedText style={styles.emissionLabel}>
-                    Emisión estimada:
+                <ThemedText style={styles.label}>Consumo (kWh) *</ThemedText>
+                <TextInput
+                  style={styles.input}
+                  value={consumoKwh}
+                  onChangeText={setConsumoKwh}
+                  keyboardType="numeric"
+                  placeholder="Ej: 50000"
+                  placeholderTextColor="#999"
+                />
+                {consumoKwh && (
+                  <ThemedText style={styles.emisionPreview}>
+                    Emisión estimada: {calcularEmisionEstimada(consumoKwh)} kg CO₂e
                   </ThemedText>
-                  <ThemedText style={styles.emissionValue}>
-                    {calcularEmisionEstimada(consumoKwh)} kg CO₂e
-                  </ThemedText>
-                </ThemedView>
-              )}
-
-              <Pressable
-                style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-                onPress={handleSubmit}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={styles.submitButtonText}>Guardar Registro</Text>
                 )}
-              </Pressable>
-            </ThemedView>
 
-            {/* Lista de Registros */}
-            {consumosEnergia && Array.isArray(consumosEnergia) && consumosEnergia.length > 0 && (
-              <ThemedView style={styles.listSection}>
-                <ThemedText type="subtitle" style={styles.listTitle}>
+                <Pressable
+                  style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+                  onPress={handleSubmit}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <ThemedText style={styles.submitText}>
+                      {editingId ? 'Actualizar' : 'Guardar Registro'}
+                    </ThemedText>
+                  )}
+                </Pressable>
+
+                {editingId && (
+                  <Pressable
+                    style={styles.cancelButton}
+                    onPress={() => {
+                      setEditingId(null);
+                      setConsumoKwh('');
+                      setSelectedCampus(null);
+                    }}
+                  >
+                    <ThemedText style={styles.cancelText}>Cancelar Edición</ThemedText>
+                  </Pressable>
+                )}
+              </ThemedView>
+
+              <ThemedView style={styles.card}>
+                <ThemedText type="subtitle" style={styles.cardTitle}>
                   Registros Guardados
                 </ThemedText>
-                {consumosEnergia.map((item: any) => (
-                  <ThemedView key={item.id} style={styles.listItem}>
-                    <View style={styles.listItemHeader}>
-                      <ThemedText style={styles.listItemCampus}>
-                        📍 {item.campus_nombre || getCampusNombre(item.campus_id)}
-                      </ThemedText>
-                      <ThemedText style={styles.listItemEmission}>
-                        {item.emision_co2e.toFixed(2)} kg CO₂e
-                      </ThemedText>
-                    </View>
-                    <ThemedText style={styles.listItemDetail}>
-                      Consumo: {item.consumo_kwh.toLocaleString()} kWh
-                    </ThemedText>
-                    <ThemedText style={styles.listItemDetail}>
-                      Factor: {item.factor_emision} kg CO₂e/kWh
-                    </ThemedText>
-                  </ThemedView>
-                ))}
+                {(consumosEnergia as any[])?.length === 0 ? (
+                  <ThemedText style={styles.noData}>
+                    No hay registros de energía para este año
+                  </ThemedText>
+                ) : (
+                  (consumosEnergia as any[])?.map((item: any) => (
+                    <ThemedView key={item.id} style={styles.listItem}>
+                      <View style={styles.listItemContent}>
+                        <ThemedText type="defaultSemiBold">
+                          📍 {item.campus_nombre}
+                        </ThemedText>
+                        <ThemedText style={styles.listItemDetail}>
+                          Consumo: {item.cantidad_kwh?.toLocaleString() || 0} kWh
+                        </ThemedText>
+                        <ThemedText style={styles.listItemDetail}>
+                          Emisión: {item.emision_co2e?.toFixed(2) || 0} kg CO₂e
+                        </ThemedText>
+                      </View>
+                      <View style={styles.listItemActions}>
+                        <Pressable
+                          style={styles.editButton}
+                          onPress={() => handleEdit(item)}
+                        >
+                          <ThemedText style={styles.editButtonText}>✏️</ThemedText>
+                        </Pressable>
+                        <Pressable
+                          style={styles.deleteButton}
+                          onPress={() => handleDelete(item.id)}
+                        >
+                          <ThemedText style={styles.deleteButtonText}>🗑️</ThemedText>
+                        </Pressable>
+                      </View>
+                    </ThemedView>
+                  ))
+                )}
               </ThemedView>
-            )}
-          </>
-        )}
+            </>
+          )}
+        </ThemedView>
+      </ScrollView>
 
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backButtonText}>Volver</Text>
-        </Pressable>
-      </ThemedView>
-    </ScrollView>
+      <ConfirmModal
+        visible={deleteModalVisible}
+        title="Confirmar Eliminación"
+        message="¿Estás seguro de que deseas eliminar este registro? Esta acción no se puede deshacer."
+        confirmText="Eliminar"
+        cancelText="Cancelar"
+        danger
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setDeleteModalVisible(false);
+          setItemToDelete(null);
+        }}
+      />
+    </>
   );
 }
 
@@ -265,62 +345,58 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 20,
+    padding: 16,
+    gap: 16,
   },
-  title: {
-    marginBottom: 16,
+  backButton: {
+    paddingVertical: 8,
+  },
+  backText: {
+    fontSize: 16,
     color: '#2E7D32',
   },
-  description: {
-    fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 24,
-    color: '#666',
+  title: {
+    marginBottom: 8,
   },
-  section: {
-    marginBottom: 24,
+  noOrg: {
+    textAlign: 'center',
+    marginVertical: 20,
+  },
+  card: {
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#F5F5F5',
+    gap: 12,
+  },
+  cardTitle: {
+    marginBottom: 8,
+  },
+  anoSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  anoButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#E0E0E0',
+  },
+  anoButtonSelected: {
+    backgroundColor: '#2E7D32',
+  },
+  anoText: {
+    fontSize: 16,
+    color: '#424242',
+  },
+  anoTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '600',
   },
   label: {
     fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 8,
     fontWeight: '600',
-    color: '#333',
-  },
-  yearSelector: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  yearButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
-  },
-  yearButtonSelected: {
-    borderColor: '#2E7D32',
-    backgroundColor: '#E8F5E9',
-  },
-  yearButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#666',
-  },
-  yearButtonTextSelected: {
-    color: '#2E7D32',
-  },
-  form: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
-  },
-  formTitle: {
-    marginBottom: 16,
-    color: '#2E7D32',
+    marginTop: 8,
   },
   campusGrid: {
     flexDirection: 'row',
@@ -331,120 +407,98 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#ddd',
-    backgroundColor: '#fff',
+    backgroundColor: '#E0E0E0',
   },
   campusButtonSelected: {
-    borderColor: '#FBC02D',
-    backgroundColor: '#FFF9C4',
+    backgroundColor: '#FBC02D',
   },
   campusButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#666',
+    color: '#424242',
   },
   campusButtonTextSelected: {
-    color: '#F57F17',
+    color: '#FFFFFF',
   },
   input: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#fff',
+    borderColor: '#CCCCCC',
   },
-  emissionPreview: {
-    marginTop: 12,
-    padding: 12,
-    backgroundColor: '#E8F5E9',
-    borderRadius: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  emissionLabel: {
+  emisionPreview: {
     fontSize: 14,
-    color: '#1B5E20',
-  },
-  emissionValue: {
-    fontSize: 16,
-    fontWeight: '600',
     color: '#2E7D32',
+    fontStyle: 'italic',
   },
   submitButton: {
     backgroundColor: '#2E7D32',
-    padding: 14,
+    paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
-    marginTop: 16,
+    marginTop: 8,
   },
   submitButtonDisabled: {
     opacity: 0.6,
   },
-  submitButtonText: {
-    color: '#fff',
+  submitText: {
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  listSection: {
-    marginBottom: 24,
+  cancelButton: {
+    backgroundColor: '#E0E0E0',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
   },
-  listTitle: {
-    marginBottom: 16,
-    color: '#2E7D32',
+  cancelText: {
+    color: '#424242',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  noData: {
+    textAlign: 'center',
+    fontStyle: 'italic',
+    color: '#757575',
   },
   listItem: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  listItemHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
     marginBottom: 8,
   },
-  listItemCampus: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  listItemEmission: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2E7D32',
+  listItemContent: {
+    flex: 1,
+    gap: 4,
   },
   listItemDetail: {
     fontSize: 14,
-    lineHeight: 20,
-    color: '#666',
-    marginTop: 4,
+    color: '#757575',
   },
-  primaryButton: {
-    backgroundColor: '#2E7D32',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
+  listItemActions: {
+    flexDirection: 'row',
+    gap: 8,
   },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  editButton: {
+    padding: 8,
+    backgroundColor: '#FFF3E0',
+    borderRadius: 6,
   },
-  backButton: {
-    backgroundColor: '#666',
-    padding: 16,
-    borderRadius: 8,
-    alignItems: 'center',
+  editButtonText: {
+    fontSize: 18,
   },
-  backButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  deleteButton: {
+    padding: 8,
+    backgroundColor: '#FFEBEE',
+    borderRadius: 6,
+  },
+  deleteButtonText: {
+    fontSize: 18,
   },
 });
