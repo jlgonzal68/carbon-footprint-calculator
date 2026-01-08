@@ -260,7 +260,8 @@ Si encuentras algún bug o tienes sugerencias, por favor abre un [issue](https:/
 
 ## 👥 Autores
 
-- Tu Nombre - Desarrollo inicial
+- José Luis González Manosalva - Desarrollo inicial
+- Juan Camilo Mejía Puerta - Pruebas y validación técnica GHG Protocol e ISO 14064-1
 
 ## 🙏 Agradecimientos
 
@@ -271,7 +272,7 @@ Si encuentras algún bug o tienes sugerencias, por favor abre un [issue](https:/
 ## 📞 Soporte
 
 Para soporte técnico o consultas:
-- Email: tu-email@ejemplo.com
+- Email: jlgonzal68@gmail.com
 - Issues: [GitHub Issues](https://github.com/tu-usuario/carbon-footprint-app/issues)
 
 ---
