@@ -225,6 +225,16 @@ export default function SettingsScreen() {
             >
               <ThemedText style={styles.menuIcon}>📊</ThemedText>
               <View style={styles.menuContent}>
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => router.push("/importacion" as any)}
+            >
+              <Text style={styles.menuIcon}>📥</Text>
+              <View style={styles.menuContent}>
+                <ThemedText style={styles.menuTitle}>Importar Datos</ThemedText>
+              </View>
+            </Pressable>
+
                 <ThemedText style={styles.menuTitle}>Exportar Datos</ThemedText>
                 <ThemedText style={{ color: colors.textSecondary, fontSize: 13 }}>
                   Exportar datos a Excel para auditorías
