@@ -1,6 +1,8 @@
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View, Platform, ActivityIndicator, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import { useState } from 'react';
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -11,12 +13,80 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated, logout, loading } = useAuth();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const navigateTo = (path: string) => {
     router.push(path as any);
+  };
+
+  const getLoginUrl = () => {
+    const baseUrl = 'https://api.manus.im/oauth/authorize';
+    const clientId = process.env.EXPO_PUBLIC_OAUTH_CLIENT_ID || 'manus';
+    const redirectUri = Platform.OS === 'web'
+      ? `${window.location.origin}/oauth/callback`
+      : 'manusapp://oauth/callback';
+    const state = Math.random().toString(36).substring(7);
+    return `${baseUrl}?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=${state}`;
+  };
+
+  const handleLogin = async () => {
+    try {
+      setIsLoggingIn(true);
+      const loginUrl = getLoginUrl();
+
+      if (Platform.OS === 'web') {
+        window.location.href = loginUrl;
+        return;
+      }
+
+      const result = await WebBrowser.openAuthSessionAsync(loginUrl, undefined, {
+        preferEphemeralSession: false,
+        showInRecents: true,
+      });
+
+      if (result.type === 'success' && result.url) {
+        try {
+          let url: URL;
+          if (result.url.startsWith('exp://') || result.url.startsWith('exps://')) {
+            const urlStr = result.url.replace(/^exp(s)?:\/\//, 'http://');
+            url = new URL(urlStr);
+          } else {
+            url = new URL(result.url);
+          }
+
+          const code = url.searchParams.get('code');
+          const state = url.searchParams.get('state');
+          const error = url.searchParams.get('error');
+
+          if (error) {
+            console.error('[Auth] OAuth error:', error);
+            return;
+          }
+
+          if (code && state) {
+            router.push({ pathname: '/oauth/callback' as any, params: { code, state } });
+          }
+        } catch (err) {
+          console.error('[Auth] Failed to parse callback URL:', err);
+          const codeMatch = result.url.match(/[?&]code=([^&]+)/);
+          const stateMatch = result.url.match(/[?&]state=([^&]+)/);
+
+          if (codeMatch && stateMatch) {
+            const code = decodeURIComponent(codeMatch[1]);
+            const state = decodeURIComponent(stateMatch[1]);
+            router.push({ pathname: '/oauth/callback' as any, params: { code, state } });
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[Auth] Login error:', error);
+      Alert.alert('Error', 'No se pudo iniciar sesión');
+    } finally {
+      setIsLoggingIn(false);
+    }
   };
 
   return (
@@ -27,6 +97,30 @@ export default function SettingsScreen() {
       <ThemedView style={styles.header}>
         <ThemedText type="title">Configuración</ThemedText>
       </ThemedView>
+
+      {!isAuthenticated && !loading && (
+        <ThemedView style={[styles.card, { backgroundColor: colors.card }]}>
+          <ThemedText type="subtitle" style={{ marginBottom: 12, textAlign: 'center' }}>
+            Bienvenido
+          </ThemedText>
+          <ThemedText style={{ color: colors.textSecondary, lineHeight: 22, textAlign: 'center', marginBottom: 20 }}>
+            Inicia sesión para acceder a tu calculadora de huella de carbono y gestionar tus datos de emisiones.
+          </ThemedText>
+          <Pressable
+            style={[styles.loginButton, { backgroundColor: colors.tint }]}
+            onPress={handleLogin}
+            disabled={isLoggingIn}
+          >
+            {isLoggingIn ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <ThemedText style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '600' }}>
+                Iniciar Sesión
+              </ThemedText>
+            )}
+          </Pressable>
+        </ThemedView>
+      )}
 
       {isAuthenticated && user && (
         <>
@@ -203,6 +297,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 24,
     borderRadius: 12,
+  },
+  loginButton: {
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
   },
   menuItem: {
     flexDirection: 'row',

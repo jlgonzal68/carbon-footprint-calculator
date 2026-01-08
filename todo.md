@@ -411,3 +411,9 @@
 - [x] Implementar pantalla de exportación con selector de año
 - [x] Agregar funcionalidad de descarga del archivo Excel generado
 - [x] Integrar opción de exportación en la pantalla de Configuración
+
+
+## Corrección de Login (Reporte de usuario)
+- [x] Agregar botón de login visible en la pantalla de Configuración cuando el usuario no está autenticado
+- [x] Mostrar mensaje claro de bienvenida con instrucciones para iniciar sesión
+- [x] Probar flujo completo de autenticación desde la interfaz web
