@@ -235,6 +235,16 @@ export default function SettingsScreen() {
               </View>
             </Pressable>
 
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => router.push("/reportes-ghg" as any)}
+            >
+              <Text style={styles.menuIcon}>📄</Text>
+              <View style={styles.menuContent}>
+                <ThemedText style={styles.menuTitle}>Reportes GHG Protocol</ThemedText>
+              </View>
+            </Pressable>
+
                 <ThemedText style={styles.menuTitle}>Exportar Datos</ThemedText>
                 <ThemedText style={{ color: colors.textSecondary, fontSize: 13 }}>
                   Exportar datos a Excel para auditorías

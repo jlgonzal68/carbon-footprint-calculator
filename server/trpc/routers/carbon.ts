@@ -2001,6 +2001,120 @@ export const carbonRouter = router({
             : null,
         };
       } catch (error) {
+  getDatosReporteGHG: protectedProcedure
+    .input(z.object({
+      ano_inventario_id: z.number(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        // Información del año y organización
+        const [anoInfo] = await db.execute(
+          `SELECT ai.ano, ai.ano_base, ai.fecha_inicio, ai.fecha_fin,
+                  o.nombre as organizacion_nombre, o.sector, o.descripcion
+           FROM ano_inventario ai
+           JOIN organizacion o ON ai.organizacion_id = o.id
+           WHERE ai.id = ?`,
+          [input.ano_inventario_id]
+        );
+
+        // Factores de emisión utilizados
+        const [factores] = await db.execute(
+          `SELECT * FROM factores_emision_ano WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+
+        // Resumen de emisiones
+        const [resumen] = await db.execute(
+          `SELECT * FROM resumen_huella_carbono WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+
+        // Alcance 1: Combustibles
+        const [combustibles] = await db.execute(
+          `SELECT tipo_combustible, SUM(cantidad) as cantidad_total, 
+                  SUM(emision_co2e) as emision_total, AVG(factor_emision) as factor_promedio
+           FROM consumo_combustible 
+           WHERE ano_inventario_id = ?
+           GROUP BY tipo_combustible`,
+          [input.ano_inventario_id]
+        );
+
+        // Alcance 1: Extintores
+        const [extintores] = await db.execute(
+          `SELECT tipo, SUM(cantidad) as cantidad_total, 
+                  SUM(emision_co2e) as emision_total, AVG(factor_emision) as factor_promedio
+           FROM inventario_extintores 
+           WHERE ano_inventario_id = ?
+           GROUP BY tipo`,
+          [input.ano_inventario_id]
+        );
+
+        // Alcance 1: Aires acondicionados
+        const [aires] = await db.execute(
+          `SELECT tipo_refrigerante, SUM(cantidad) as cantidad_total, 
+                  SUM(emision_total_co2e) as emision_total, AVG(factor_emision) as factor_promedio
+           FROM inventario_aires_acond 
+           WHERE ano_inventario_id = ?
+           GROUP BY tipo_refrigerante`,
+          [input.ano_inventario_id]
+        );
+
+        // Alcance 2: Energía
+        const [energia] = await db.execute(
+          `SELECT SUM(cantidad_kwh) as cantidad_total_kwh, 
+                  SUM(emision_co2e) as emision_total, AVG(factor_emision) as factor_promedio
+           FROM consumo_energia 
+           WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+
+        // Alcance 3: Residuos
+        const [residuos] = await db.execute(
+          `SELECT tipo, SUM(cantidad_kg) as cantidad_total_kg, 
+                  SUM(emision_co2e) as emision_total, AVG(factor_emision) as factor_promedio
+           FROM residuos_solidos 
+           WHERE ano_inventario_id = ?
+           GROUP BY tipo`,
+          [input.ano_inventario_id]
+        );
+
+        // Alcance 3: Agua
+        const [agua] = await db.execute(
+          `SELECT SUM(agua_potable_m3) as agua_potable_total, 
+                  SUM(agua_residual_m3) as agua_residual_total,
+                  SUM(emision_potable_co2e) as emision_potable, 
+                  SUM(emision_residual_co2e) as emision_residual,
+                  AVG(factor_emision_potable) as factor_potable,
+                  AVG(factor_emision_residual) as factor_residual
+           FROM consumo_agua 
+           WHERE ano_inventario_id = ?`,
+          [input.ano_inventario_id]
+        );
+
+        await db.end();
+        return {
+          ano_info: (anoInfo as any[])[0] || {},
+          factores: (factores as any[])[0] || {},
+          resumen: (resumen as any[])[0] || {},
+          alcance_1: {
+            combustibles: combustibles as any[],
+            extintores: extintores as any[],
+            aires_acondicionados: aires as any[],
+          },
+          alcance_2: {
+            energia: (energia as any[])[0] || {},
+          },
+          alcance_3: {
+            residuos: residuos as any[],
+            agua: (agua as any[])[0] || {},
+          },
+        };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
         await db.end();
         throw error;
       }
