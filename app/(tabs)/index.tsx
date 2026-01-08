@@ -12,6 +12,7 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 const COLORS_ALCANCE = ['#2E7D32', '#66BB6A', '#A5D6A7'];
 const COLORS_CAMPUS = ['#D32F2F', '#F57C00', '#FBC02D', '#7B1FA2', '#0288D1'];
 
+import { ComparativaAnualChart } from "@/components/comparativa-anual-chart";
 const CAMPUS_NAMES: Record<number, string> = {
   1: 'Robledo',
   2: 'Fraternidad',
@@ -323,6 +324,16 @@ export default function DashboardScreen() {
               <Text style={styles.totalUnit}>kg CO₂e</Text>
             </View>
 
+
+        {/* Gráfico de Comparativa Multi-Anual */}
+        {anosInventario && Array.isArray(anosInventario) && anosInventario.length > 1 && organizacion && (
+          <ThemedView style={styles.card}>
+            <ThemedText type="subtitle" style={styles.cardTitle}>
+              📈 Evolución de Emisiones
+            </ThemedText>
+            <ComparativaAnualChart organizacionId={(organizacion as any).id} />
+          </ThemedView>
+        )}
             {/* Gráfico de Alcances */}
             {datosAlcance.length > 0 && (
               <ThemedView style={styles.card}>

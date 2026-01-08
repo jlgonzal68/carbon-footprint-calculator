@@ -1948,6 +1948,63 @@ export const carbonRouter = router({
         throw error;
       }
     }),
+  getComparativaAnual: protectedProcedure
+    .input(z.object({
+      organizacion_id: z.number(),
+    }))
+    .query(async ({ input }) => {
+      const db = await getConnection();
+      try {
+        const [anosInventario] = await db.execute(
+          `SELECT ai.id, ai.ano, ai.ano_base,
+                  rhc.alcance_1_total, rhc.alcance_2_total, rhc.alcance_3_total, rhc.total_co2e
+           FROM ano_inventario ai
+           LEFT JOIN resumen_huella_carbono rhc ON ai.id = rhc.ano_inventario_id
+           WHERE ai.organizacion_id = ?
+           ORDER BY ai.ano ASC`,
+          [input.organizacion_id]
+        );
+
+        const datos = (anosInventario as any[]).map((ano) => ({
+          ano: ano.ano,
+          ano_base: ano.ano_base === 1,
+          alcance_1: parseFloat(ano.alcance_1_total || '0'),
+          alcance_2: parseFloat(ano.alcance_2_total || '0'),
+          alcance_3: parseFloat(ano.alcance_3_total || '0'),
+          total: parseFloat(ano.total_co2e || '0'),
+        }));
+
+        // Calcular tendencias
+        const tendencias = datos.map((d, index) => {
+          if (index === 0) {
+            return { ...d, cambio_porcentual: 0, tendencia: 'base' };
+          }
+          const anterior = datos[index - 1];
+          const cambio = anterior.total > 0 
+            ? ((d.total - anterior.total) / anterior.total) * 100 
+            : 0;
+          return {
+            ...d,
+            cambio_porcentual: cambio,
+            tendencia: cambio > 0 ? 'aumento' : cambio < 0 ? 'reduccion' : 'estable',
+          };
+        });
+
+        await db.end();
+        return {
+          datos: tendencias,
+          ano_mayor_emision: datos.length > 0 
+            ? datos.reduce((max, d) => d.total > max.total ? d : max, datos[0])
+            : null,
+          ano_menor_emision: datos.length > 0
+            ? datos.reduce((min, d) => d.total < min.total ? d : min, datos[0])
+            : null,
+        };
+      } catch (error) {
+        await db.end();
+        throw error;
+      }
+    }),
 });
 
 // ============ FUNCIONES AUXILIARES ============
