@@ -2115,10 +2115,7 @@ export const carbonRouter = router({
         throw error;
       }
     }),
-        await db.end();
-        throw error;
-      }
-    }),
+
 });
 
 // ============ FUNCIONES AUXILIARES ============

@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE IF NOT EXISTS metas_reduccion (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  organizacion_id INT NOT NULL,\n  tipo_meta ENUM('porcentaje', 'absoluto') NOT NULL DEFAULT 'porcentaje',\n  valor_objetivo DECIMAL(10,2) NOT NULL,\n  ano_objetivo INT NOT NULL,\n  ano_base INT NOT NULL,\n  alcances_incluidos VARCHAR(50) NOT NULL DEFAULT '1,2,3',\n  descripcion TEXT,\n  responsable VARCHAR(255),\n  fecha_limite DATE,\n  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  FOREIGN KEY (organizacion_id) REFERENCES organizacion(id) ON DELETE CASCADE,\n  INDEX idx_organizacion (organizacion_id),\n  INDEX idx_ano_objetivo (ano_objetivo)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3kjuLewoXQha1m8.root --database TRAGBD45TdHUTg5Ykq9vW6 --execute CREATE TABLE IF NOT EXISTS metas_reduccion (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  organizacion_id INT NOT NULL,\n  tipo_meta ENUM('porcentaje', 'absoluto') NOT NULL DEFAULT 'porcentaje',\n  valor_objetivo DECIMAL(10,2) NOT NULL,\n  ano_objetivo INT NOT NULL,\n  ano_base INT NOT NULL,\n  alcances_incluidos VARCHAR(50) NOT NULL DEFAULT '1,2,3',\n  descripcion TEXT,\n  responsable VARCHAR(255),\n  fecha_limite DATE,\n  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,\n  FOREIGN KEY (organizacion_id) REFERENCES organizacion(id) ON DELETE CASCADE,\n  INDEX idx_organizacion (organizacion_id),\n  INDEX idx_ano_objetivo (ano_objetivo)\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 752
+}

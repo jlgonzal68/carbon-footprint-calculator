@@ -417,3 +417,21 @@
 - [x] Agregar botón de login visible en la pantalla de Configuración cuando el usuario no está autenticado
 - [x] Mostrar mensaje claro de bienvenida con instrucciones para iniciar sesión
 - [x] Probar flujo completo de autenticación desde la interfaz web
+
+
+## Módulo de Metas de Reducción - Reimplementación (Nueva solicitud)
+- [x] Crear tabla metas_reduccion con campos completos
+- [x] Crear índices para optimizar consultas de metas
+- [x] Implementar endpoint createMetaReduccion
+- [x] Implementar endpoint getMetasReduccion
+- [x] Implementar endpoint updateMetaReduccion
+- [x] Implementar endpoint deleteMetaReduccion
+- [x] Implementar endpoint getProgresoMetas con cálculo de estado
+- [ ] Crear pantalla app/metas-reduccion.tsx
+- [ ] Implementar formulario modal de creación/edición de metas
+- [ ] Agregar visualización de progreso con barra y semáforo
+- [ ] Agregar enlace en menú de Configuración
+- [ ] Agregar sección de metas en Dashboard
+- [ ] Mostrar hasta 3 metas activas con indicadores
+- [ ] Implementar sistema de semáforo (verde ≥70%, amarillo 40-70%, rojo <40%)
+- [ ] Crear checkpoint funcional

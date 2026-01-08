@@ -201,7 +201,7 @@ export default function SettingsScreen() {
 
             <Pressable
               style={[styles.menuItem, { borderBottomColor: colors.border }]}
-              onPress={() => navigateTo('/metas')}
+              onPress={() => router.push('/metas-reduccion' as any)}
             >
               <ThemedText style={styles.menuIcon}>🎯</ThemedText>
               <View style={styles.menuContent}>

@@ -59,6 +59,11 @@ export default function DashboardScreen() {
     },
   });
 
+  const { data: metasConProgreso } = trpc.metas.getProgresoMetas.useQuery(
+    { organizacion_id: (organizacion as any)?.id },
+    { enabled: !!(organizacion as any)?.id }
+  );
+
   // Preparar datos para gráfico de alcances
   const datosAlcance = resumen ? [
     { name: 'Alcance 1', value: parseFloat(resumen.alcance_1_total || '0'), color: COLORS_ALCANCE[0] },
@@ -401,6 +406,50 @@ export default function DashboardScreen() {
                     </Bar>
                   </BarChart>
                 </View>
+              </ThemedView>
+            )}
+
+            {/* Sección de Metas de Reducción */}
+            {metasConProgreso && metasConProgreso.length > 0 && (
+              <ThemedView style={styles.card}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <ThemedText type="subtitle" style={styles.cardTitle}>🎯 Metas de Reducción</ThemedText>
+                  <Pressable onPress={() => router.push('/metas-reduccion' as any)} style={{ padding: 8 }}>
+                    <Text style={{ color: '#2196F3', fontWeight: '600' }}>Ver todas →</Text>
+                  </Pressable>
+                </View>
+                {metasConProgreso.slice(0, 3).map((meta: any) => {
+                  const getEstadoColor = (estado: string) => {
+                    if (estado === 'verde') return '#4CAF50';
+                    if (estado === 'amarillo') return '#FFC107';
+                    if (estado === 'rojo') return '#F44336';
+                    return '#9E9E9E';
+                  };
+                  const getEstadoTexto = (estado: string) => {
+                    if (estado === 'verde') return 'Cumpliendo';
+                    if (estado === 'amarillo') return 'En riesgo';
+                    if (estado === 'rojo') return 'Incumpliendo';
+                    return 'Sin datos';
+                  };
+                  return (
+                    <View key={meta.id} style={{ marginBottom: 12, padding: 12, backgroundColor: '#F5F5F5', borderRadius: 8 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <Text style={{ fontWeight: '600', flex: 1 }}>{meta.descripcion || 'Meta de reducción'}</Text>
+                        <View style={{ backgroundColor: getEstadoColor(meta.estado), paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 }}>
+                          <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>{getEstadoTexto(meta.estado)}</Text>
+                        </View>
+                      </View>
+                      {meta.estado !== 'sin_datos' && (
+                        <>
+                          <View style={{ height: 6, backgroundColor: '#E0E0E0', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
+                            <View style={{ height: '100%', width: `${Math.min(meta.progreso, 100)}%`, backgroundColor: getEstadoColor(meta.estado) }} />
+                          </View>
+                          <Text style={{ fontSize: 12, color: '#666' }}>Progreso: {meta.progreso.toFixed(1)}% | Objetivo: {meta.ano_objetivo}</Text>
+                        </>
+                      )}
+                    </View>
+                  );
+                })}
               </ThemedView>
             )}
 
