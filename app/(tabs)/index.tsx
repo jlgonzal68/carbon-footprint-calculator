@@ -130,6 +130,13 @@ export default function DashboardScreen() {
     );
   }
 
+  // Redirigir a onboarding si no hay organización
+  useEffect(() => {
+    if (user && organizaciones !== undefined && !organizacion) {
+      router.replace('/onboarding' as any);
+    }
+  }, [user, organizaciones, organizacion]);
+
   if (!organizacion) {
     return (
       <ScrollView
@@ -141,14 +148,9 @@ export default function DashboardScreen() {
             🌱 Dashboard
           </ThemedText>
           <ThemedText style={styles.noOrg}>
-            No tienes una organización configurada. Crea una en Configuración.
+            Redirigiendo al asistente de configuración...
           </ThemedText>
-          <Pressable
-            style={styles.actionButton}
-            onPress={() => router.push('/management/organizacion' as any)}
-          >
-            <Text style={styles.actionButtonText}>Crear Organización</Text>
-          </Pressable>
+          <ActivityIndicator size="large" color="#2E7D32" style={{ marginTop: 20 }} />
         </ThemedView>
       </ScrollView>
     );
