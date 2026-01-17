@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet, ScrollView, Dimensions, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,11 +8,11 @@ import { trpc } from '@/lib/trpc';
 import { useAuth } from '@/hooks/use-auth';
 import { usePermissions } from '@/hooks/use-permissions';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { ComparativaAnualChart } from "@/components/comparativa-anual-chart";
 
 const COLORS_ALCANCE = ['#2E7D32', '#66BB6A', '#A5D6A7'];
 const COLORS_CAMPUS = ['#D32F2F', '#F57C00', '#FBC02D', '#7B1FA2', '#0288D1'];
 
-import { ComparativaAnualChart } from "@/components/comparativa-anual-chart";
 const CAMPUS_NAMES: Record<number, string> = {
   1: 'Robledo',
   2: 'Fraternidad',
@@ -63,6 +63,21 @@ export default function DashboardScreen() {
     { organizacion_id: (organizacion as any)?.id },
     { enabled: !!(organizacion as any)?.id }
   );
+
+  // ✅ MOVER AQUÍ: useEffect AL INICIO, ANTES DE CUALQUIER CONDICIONAL
+  // ✅ useEffect mejorado
+useEffect(() => {
+  if (user && organizaciones !== undefined) {
+    // Si hay organizaciones, no hacer nada (dejar que se muestre el dashboard)
+    // Si NO hay organizaciones, redirigir a onboarding
+    if (Array.isArray(organizaciones) && organizaciones.length === 0) {
+      // Solo redirigir si estamos en el dashboard, no si ya estamos en onboarding
+      if (!window.location.pathname.includes('/onboarding')) {
+        router.replace('/onboarding' as any);
+      }
+    }
+  }
+}, [user, organizaciones]);
 
   // Preparar datos para gráfico de alcances
   const datosAlcance = resumen ? [
@@ -135,13 +150,6 @@ export default function DashboardScreen() {
       </ScrollView>
     );
   }
-
-  // Redirigir a onboarding si no hay organización
-  useEffect(() => {
-    if (user && organizaciones !== undefined && !organizacion) {
-      router.replace('/onboarding' as any);
-    }
-  }, [user, organizaciones, organizacion]);
 
   if (!organizacion) {
     return (
@@ -329,16 +337,16 @@ export default function DashboardScreen() {
               <Text style={styles.totalUnit}>kg CO₂e</Text>
             </View>
 
+            {/* Gráfico de Comparativa Multi-Anual */}
+            {anosInventario && Array.isArray(anosInventario) && anosInventario.length > 1 && organizacion && (
+              <ThemedView style={styles.card}>
+                <ThemedText type="subtitle" style={styles.cardTitle}>
+                  📈 Evolución de Emisiones
+                </ThemedText>
+                <ComparativaAnualChart organizacionId={(organizacion as any).id} />
+              </ThemedView>
+            )}
 
-        {/* Gráfico de Comparativa Multi-Anual */}
-        {anosInventario && Array.isArray(anosInventario) && anosInventario.length > 1 && organizacion && (
-          <ThemedView style={styles.card}>
-            <ThemedText type="subtitle" style={styles.cardTitle}>
-              📈 Evolución de Emisiones
-            </ThemedText>
-            <ComparativaAnualChart organizacionId={(organizacion as any).id} />
-          </ThemedView>
-        )}
             {/* Gráfico de Alcances */}
             {datosAlcance.length > 0 && (
               <ThemedView style={styles.card}>

@@ -15,10 +15,11 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
 
   // Determine the auth method:
   // - Native platform: use stored session token as Bearer auth
-  // - Web (including iframe): use cookie-based auth (browser handles automatically)
-  //   Cookie is set on backend domain via POST /api/auth/session after receiving token via postMessage
+  // - Web: try to use cookie-based auth first, fall back to Authorization header if no cookie
+  const sessionToken = await Auth.getSessionToken();
+  
   if (Platform.OS !== "web") {
-    const sessionToken = await Auth.getSessionToken();
+    // Mobile: Always use Bearer token
     console.log("[API] apiCall:", {
       endpoint,
       hasToken: !!sessionToken,
@@ -29,7 +30,17 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
       console.log("[API] Authorization header added");
     }
   } else {
-    console.log("[API] apiCall:", { endpoint, platform: "web", method: options.method || "GET" });
+    // Web: Try cookie-based auth, but use Bearer token as fallback
+    console.log("[API] apiCall:", { 
+      endpoint, 
+      platform: "web", 
+      hasToken: !!sessionToken,
+      method: options.method || "GET" 
+    });
+    if (sessionToken) {
+      headers["Authorization"] = `Bearer ${sessionToken}`;
+      console.log("[API] Authorization header added (web fallback)");
+    }
   }
 
   const baseUrl = getApiBaseUrl();

@@ -1,4 +1,5 @@
-import { Pressable, ScrollView, StyleSheet, View, Platform, ActivityIndicator, Alert } from "react-native";
+//import { View, Text, Pressable, ScrollView, Platform, Alert } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View, Text, Platform, ActivityIndicator, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
@@ -23,8 +24,9 @@ export default function SettingsScreen() {
   };
 
   const getLoginUrl = () => {
-    const baseUrl = 'https://api.manus.im/oauth/authorize';
-    const clientId = process.env.EXPO_PUBLIC_OAUTH_CLIENT_ID || 'manus';
+    const serverUrl = process.env.EXPO_PUBLIC_OAUTH_SERVER_URL || 'http://localhost:3001';
+    const baseUrl = `${serverUrl}/oauth/authorize`;
+    const clientId = process.env.EXPO_PUBLIC_OAUTH_CLIENT_ID || 'jlgonzal';
     const redirectUri = Platform.OS === 'web'
       ? `${window.location.origin}/oauth/callback`
       : 'manusapp://oauth/callback';

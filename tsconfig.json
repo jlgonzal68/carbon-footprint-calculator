@@ -8,6 +8,6 @@
       "@shared/*": ["./shared/*"]
     }
   },
-  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"],
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts", "server/trpc/routers/carbon.ts.backup1"],
   "exclude": ["node_modules", "dist"]
 }

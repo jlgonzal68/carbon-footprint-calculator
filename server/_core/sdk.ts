@@ -168,6 +168,12 @@ class SDKServer {
     const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
     const secretKey = this.getSessionSecret();
 
+    console.log("[Auth] Creating session token with payload:", {
+      openId: payload.openId ? `${payload.openId.substring(0, 20)}...` : "MISSING",
+      appId: payload.appId ? `${payload.appId.substring(0, 20)}...` : "MISSING",
+      name: payload.name ? `${payload.name.substring(0, 20)}...` : "(empty)",
+    });
+
     return new SignJWT({
       openId: payload.openId,
       appId: payload.appId,
@@ -193,15 +199,24 @@ class SDKServer {
       });
       const { openId, appId, name } = payload as Record<string, unknown>;
 
-      if (!isNonEmptyString(openId) || !isNonEmptyString(appId) || !isNonEmptyString(name)) {
-        console.warn("[Auth] Session payload missing required fields");
+      console.log("[Auth] JWT payload decoded:", {
+        openId: openId ? `${String(openId).substring(0, 20)}...` : "MISSING",
+        appId: appId ? `${String(appId).substring(0, 20)}...` : "MISSING",
+        name: name ? `${String(name).substring(0, 20)}...` : "MISSING",
+      });
+
+      // openId and appId are required, name is optional (can be empty string)
+      if (!isNonEmptyString(openId) || !isNonEmptyString(appId)) {
+        console.warn("[Auth] Session payload missing required fields (openId or appId)");
+        console.warn("[Auth] openId type:", typeof openId, "value:", openId);
+        console.warn("[Auth] appId type:", typeof appId, "value:", appId);
         return null;
       }
 
       return {
         openId,
         appId,
-        name,
+        name: typeof name === "string" ? name : "",
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
@@ -264,8 +279,16 @@ class SDKServer {
         });
         user = await db.getUserByOpenId(userInfo.openId);
       } catch (error) {
-        console.error("[Auth] Failed to sync user from OAuth:", error);
-        throw ForbiddenError("Failed to sync user info");
+        console.warn("[Auth] Failed to sync user from OAuth (continuing without DB):", error);
+        // If DB is unavailable, create a temporary user object from the JWT
+        user = {
+          id: undefined as any,
+          openId: sessionUserId,
+          name: session.name || null,
+          email: null,
+          loginMethod: null,
+          lastSignedIn: signedInAt,
+        } as any;
       }
     }
 
@@ -273,10 +296,16 @@ class SDKServer {
       throw ForbiddenError("User not found");
     }
 
-    await db.upsertUser({
-      openId: user.openId,
-      lastSignedIn: signedInAt,
-    });
+    // Try to update last signed in, but don't fail if DB is unavailable
+    try {
+      await db.upsertUser({
+        openId: user.openId,
+        lastSignedIn: signedInAt,
+      });
+    } catch (error) {
+      console.warn("[Auth] Failed to update lastSignedIn:", error);
+      // Continue anyway - user is authenticated even if we can't update the DB
+    }
 
     return user;
   }

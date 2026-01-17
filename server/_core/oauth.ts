@@ -52,7 +52,7 @@ function buildUserResponse(
       },
 ) {
   return {
-    id: (user as any)?.id ?? null,
+    id: (user as any)?.id ?? undefined,
     openId: user?.openId ?? null,
     name: user?.name ?? null,
     email: user?.email ?? null,
@@ -74,7 +74,24 @@ export function registerOAuthRoutes(app: Express) {
     try {
       const tokenResponse = await sdk.exchangeCodeForToken(code, state);
       const userInfo = await sdk.getUserInfo(tokenResponse.accessToken);
-      await syncUser(userInfo);
+      
+      // Try to sync user to database, but don't fail if DB is unavailable
+      let user = null;
+      try {
+        user = await syncUser(userInfo);
+      } catch (dbError) {
+        console.warn("[OAuth] Failed to sync user to database:", dbError);
+        // Use userInfo directly if DB sync fails
+        user = {
+          id: undefined as any,
+          openId: userInfo.openId!,
+          name: userInfo.name || null,
+          email: userInfo.email || null,
+          loginMethod: userInfo.loginMethod || null,
+          lastSignedIn: new Date(),
+        };
+      }
+
       const sessionToken = await sdk.createSessionToken(userInfo.openId!, {
         name: userInfo.name || "",
         expiresInMs: ONE_YEAR_MS,
@@ -83,13 +100,17 @@ export function registerOAuthRoutes(app: Express) {
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
-      // Redirect to the frontend URL (Expo web on port 8081)
-      // Cookie is set with parent domain so it works across both 3000 and 8081 subdomains
+      // Encode user info as base64 for URL parameter
+      const userResponse = buildUserResponse(user);
+      const encodedUser = Buffer.from(JSON.stringify(userResponse)).toString("base64");
+      
+      // Redirect to the frontend callback URL with sessionToken and user parameters
       const frontendUrl =
         process.env.EXPO_WEB_PREVIEW_URL ||
         process.env.EXPO_PACKAGER_PROXY_URL ||
         "http://localhost:8081";
-      res.redirect(302, frontendUrl);
+      const callbackUrl = `${frontendUrl}/oauth/callback?sessionToken=${encodeURIComponent(sessionToken)}&user=${encodeURIComponent(encodedUser)}`;
+      res.redirect(302, callbackUrl);
     } catch (error) {
       console.error("[OAuth] Callback failed", error);
       res.status(500).json({ error: "OAuth callback failed" });
@@ -137,6 +158,11 @@ export function registerOAuthRoutes(app: Express) {
   // Get current authenticated user - works with both cookie (web) and Bearer token (mobile)
   app.get("/api/auth/me", async (req: Request, res: Response) => {
     try {
+      console.log("[Auth] /api/auth/me request received");
+      const authHeader = req.headers.authorization;
+      const cookies = req.headers.cookie;
+      console.log("[Auth] Auth header present:", !!authHeader);
+      console.log("[Auth] Cookies present:", !!cookies);
       const user = await sdk.authenticateRequest(req);
       res.json({ user: buildUserResponse(user) });
     } catch (error) {

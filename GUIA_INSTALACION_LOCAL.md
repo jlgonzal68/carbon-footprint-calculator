@@ -245,6 +245,67 @@ Si tienes credenciales de OAuth configuradas:
 
 Si NO tienes OAuth configurado (para desarrollo local):
 
+**Opción C: Usar servidor OAuth local (mock)**
+
+1. Inicia el servidor mock (escucha por defecto en el puerto 3001):
+
+```bash
+pnpm dev:oauth-mock
+```
+
+2. Asegúrate de tener en tu `.env` estas variables para desarrollo local:
+
+```env
+EXPO_PUBLIC_OAUTH_PORTAL_URL="http://localhost:3001"
+EXPO_PUBLIC_OAUTH_SERVER_URL="http://localhost:3001"
+```
+
+3. Abre en el navegador este endpoint de prueba (reemplaza `tu_app_id` y `redirectUri` si lo deseas):
+
+```
+http://localhost:3001/app-auth?appId=tu_app_id&redirectUri=http://localhost:8081/oauth/callback&state=estado
+```
+
+4. Selecciona un usuario en la página y haz clic en "Login as Selected User" para simular el flujo de OAuth y que la aplicación reciba un `code` que luego será intercambiado por un token.
+
+### ⚙️ Administración del mock (usuarios/roles)
+
+El servidor mock guarda usuarios en `scripts/oauth-mock.users.json` y expone endpoints para administrarlos:
+
+- Listar usuarios:
+
+```bash
+curl http://localhost:3001/admin/users
+```
+
+- Crear/actualizar usuario:
+
+```bash
+curl -X POST http://localhost:3001/admin/users -H "Content-Type: application/json" -d '{"openId":"jdoe@test.local","name":"John Doe","email":"jdoe@test.local","roles":["usuario"]}'
+```
+
+- Eliminar usuario:
+
+```bash
+curl -X DELETE http://localhost:3001/admin/users/jdoe@test.local
+```
+
+- Lista de tokens revocados:
+
+```bash
+curl http://localhost:3001/admin/revoked
+```
+
+- Revocar token:
+
+```bash
+curl -X POST http://localhost:3001/admin/revoke -H "Content-Type: application/json" -d '{"accessToken":"mock-access-token-mockcode-admin@test.local-abc123"}'
+```
+
+También hay una **interfaz web de administración** en `http://localhost:3001/admin` para gestionar usuarios y tokens revocados.
+
+Los cambios se persisten en `scripts/oauth-mock.users.json` y `scripts/oauth-mock.revoked.json`. Puedes también editar esos archivos manualmente y reiniciar el servidor mock.
+
 1. **Abre MySQL Workbench** o phpMyAdmin
 
 2. **Ejecuta** este script SQL para crear un usuario administrador:

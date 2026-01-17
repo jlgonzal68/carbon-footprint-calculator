@@ -8,3 +8,17 @@ export const ENV = {
   forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
 };
+
+// Log para verificar que las variables se cargan correctamente
+if (!ENV.cookieSecret) {
+  console.warn(
+    "[ENV] WARNING: JWT_SECRET is not configured! Session tokens will not verify correctly.",
+  );
+} else {
+  console.log(
+    "[ENV] JWT_SECRET loaded successfully (" +
+      ENV.cookieSecret.length +
+      " characters)",
+  );
+}
+

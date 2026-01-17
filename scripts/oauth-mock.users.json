@@ -1,0 +1,14 @@
+[
+  {
+    "openId": "admin@test.local",
+    "name": "Administrador",
+    "email": "admin@test.local",
+    "roles": ["administrador"]
+  },
+  {
+    "openId": "user@test.local",
+    "name": "User Test",
+    "email": "user@test.local",
+    "roles": ["usuario"]
+  }
+]

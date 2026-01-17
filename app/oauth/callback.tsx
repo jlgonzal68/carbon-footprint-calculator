@@ -1,6 +1,7 @@
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import * as Api from "@/lib/api";
+import { establishSession } from "@/lib/api";
 import * as Auth from "@/lib/auth";
 import * as Linking from "expo-linking";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -11,13 +12,34 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export default function OAuthCallback() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{
+  const localParams = useLocalSearchParams<{
     code?: string;
     state?: string;
     error?: string;
     sessionToken?: string;
     user?: string;
   }>();
+  
+  // Fallback: also try to get params from window.location on web
+  const webParams = typeof window !== "undefined" 
+    ? Object.fromEntries(new URLSearchParams(window.location.search))
+    : {};
+  
+  console.log("[OAuth] Component mounted");
+  console.log("[OAuth] localParams from useLocalSearchParams:", localParams);
+  console.log("[OAuth] webParams from window.location.search:", webParams);
+  console.log("[OAuth] window.location.search:", typeof window !== "undefined" ? window.location.search : "no window");
+  
+  const params = {
+    code: localParams.code || webParams.code,
+    state: localParams.state || webParams.state,
+    error: localParams.error || webParams.error,
+    sessionToken: localParams.sessionToken || webParams.sessionToken,
+    user: localParams.user || webParams.user,
+  };
+  
+  console.log("[OAuth] Final merged params:", params);
+  
   const [status, setStatus] = useState<"processing" | "success" | "error">("processing");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -36,6 +58,14 @@ export default function OAuthCallback() {
         if (params.sessionToken) {
           console.log("[OAuth] Session token found in params (web callback)");
           await Auth.setSessionToken(params.sessionToken);
+
+          // Establish session cookie on backend for web platform
+          const sessionEstablished = await establishSession(params.sessionToken);
+          if (!sessionEstablished) {
+            console.warn("[OAuth] Failed to establish session cookie, but continuing...");
+          } else {
+            console.log("[OAuth] Session cookie established successfully");
+          }
 
           // Decode and store user info if available
           if (params.user) {

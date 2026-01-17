@@ -496,7 +496,7 @@ export default function ReportsScreen() {
             return `
               <tr>
                 <td>${labels[key] || key}</td>
-                <td class="number">${parseFloat(value as string).toFixed(4)}</td>
+                <td class="number">${parseFloat(String(value as any)).toFixed(4)}</td>
                 <td>${units[key] || '-'}</td>
               </tr>
             `;
